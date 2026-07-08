@@ -333,6 +333,12 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
   const dragStartX = useRef(0);
   const dragStartO = useRef(0);
 
+  // ── Real market prices ──────────────────────────────────────
+  const [realPrices, setRealPrices] = useState<Record<string, number>>({});
+  const [marketLive, setMarketLive] = useState(false);
+  const isFirstFetch = useRef(true);
+  const lastWsUpdate = useRef<Record<string, number>>({});
+
   // ── Generate candle data ─────────────────────────────────────
   const genCandles = useCallback((n: number, start: number, vol: number) => {
     const d: any[] = []; let pr = start; const now = Date.now();
@@ -379,6 +385,107 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
       });
     }, 1000);
     return () => clearInterval(iv);
+  }, []);
+
+  // ── Fetch real market prices ────────────────────────────────
+  useEffect(() => {
+    const fetchPrices = async () => {
+      try {
+        const res = await fetch('/api/prices');
+        const data = await res.json();
+        if (data && !data.error && typeof data === 'object' && !Array.isArray(data)) {
+          setRealPrices(data);
+          setMarketLive(true);
+
+          // Apply real prices to pairData
+          setPairData(prev => {
+            const next = { ...prev };
+            for (const [pair, price] of Object.entries(data)) {
+              if (!next[pair]) continue;
+              // After first fetch, only update forex (crypto handled by WebSocket)
+              if (!isFirstFetch.current && PAIRS[pair]?.g === 'Crypto') continue;
+              const cn = [...next[pair].cn];
+              const last = cn[cn.length - 1];
+              const cfg = PAIRS[pair];
+              if (!cfg) continue;
+              const o = last.c;
+              const h = Math.max(o, price) + Math.random() * cfg.vol * 0.2;
+              const l = Math.min(o, price) - Math.random() * cfg.vol * 0.2;
+              cn.push({ o, h, l, c: price, v: 100 + Math.random() * 200, t: Date.now() });
+              if (cn.length > 500) cn.shift();
+              next[pair] = { ...next[pair], cn, cp: price, ch: ((price - cn[0].o) / cn[0].o) * 100 };
+            }
+            return next;
+          });
+          isFirstFetch.current = false;
+        }
+      } catch { /* silent */ }
+    };
+    fetchPrices();
+    const iv = setInterval(fetchPrices, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // ── Binance WebSocket for real-time crypto ───────────────────
+  useEffect(() => {
+    const streams = ['btcusdt@ticker', 'ethusdt@ticker', 'solusdt@ticker', 'xrpusdt@ticker', 'dogeusdt@ticker'];
+    const pairMap: Record<string, string> = {
+      BTCUSDT: 'BTC/USD', ETHUSDT: 'ETH/USD', SOLUSDT: 'SOL/USD',
+      XRPUSDT: 'XRP/USD', DOGEUSDT: 'DOGE/USD',
+    };
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      try {
+        ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams.join('/')}`);
+      } catch { return; }
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          const symbol = msg.data?.s;
+          const price = parseFloat(msg.data?.c);
+          if (!symbol || !price) return;
+
+          const mapped = pairMap[symbol];
+          if (!mapped) return;
+
+          // Throttle to ~2 updates/sec per pair
+          const now = Date.now();
+          if (now - (lastWsUpdate.current[mapped] || 0) < 500) return;
+          lastWsUpdate.current[mapped] = now;
+
+          setPairData(prev => {
+            if (!prev[mapped]) return prev;
+            const cn = [...prev[mapped].cn];
+            const last = cn[cn.length - 1];
+            // Update current candle's close/high/low with real price
+            last.c = price;
+            last.h = Math.max(last.h, price);
+            last.l = Math.min(last.l, price);
+            last.v = (last.v || 0) + 10;
+            return {
+              ...prev,
+              [mapped]: { ...prev[mapped], cn, cp: price, ch: ((price - cn[0].o) / cn[0].o) * 100 },
+            };
+          });
+        } catch { /* parse error */ }
+      };
+
+      ws.onclose = () => {
+        reconnectTimer = setTimeout(connect, 5000);
+      };
+      ws.onerror = () => {
+        ws?.close();
+      };
+    };
+
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer);
+      try { ws?.close(); } catch {}
+    };
   }, []);
 
   // ── Update positions P&L ─────────────────────────────────────
@@ -636,10 +743,12 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
             <Sofa size={10} /> Lounge
           </button>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg ml-auto" style={{ background: '#13131d', border: '1px solid #282840' }}>
-          <span className="text-[10px] uppercase tracking-wider" style={{ color: '#505068' }}>LIVE</span>
-          <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
-        </div>
+        {marketLive && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg ml-auto" style={{ background: 'rgba(0,232,123,.08)', border: '1px solid rgba(0,232,123,.25)' }}>
+            <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
+            <span className="text-[10px] font-semibold tracking-wider" style={{ color: '#00e87b' }}>MARKET</span>
+          </div>
+        )}
         <div className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold cursor-pointer" style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
           {myName.slice(0, 2).toUpperCase()}
         </div>
