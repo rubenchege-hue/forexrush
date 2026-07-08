@@ -1,563 +1,167 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
-import {
-  Trophy, Users, DollarSign, Clock, TrendingUp, TrendingDown,
-  Zap, Shield, Target, ChevronUp, ChevronDown, Activity,
-  BarChart3, Flame, Crown, Medal, Award, ArrowRight, Play,
-  Timer, Loader2, Key, Lock, CheckCircle2, XCircle, Eye,
-  EyeOff, Sparkles, AlertTriangle, Copy,
-} from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { Loader2, Key, Lock, CheckCircle2, XCircle, Eye, EyeOff, Zap, Trophy, Shield } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-// ── Types ──────────────────────────────────────────────────────────────
-interface Competition {
-  id: string; title: string; description: string; entryFee: number;
-  prizePool: number; startDate: string; endDate: string; status: string;
-  maxParticipants: number; _count: { competitors: number };
-}
+// ═══════════════════════════════════════════════════════════════
+//  TYPES
+// ═══════════════════════════════════════════════════════════════
+interface Comp { id: string; title: string; status: string; endDate: string; _count: { competitors: number }; prizePool: number; }
+interface LbEntry { id: string; username: string; displayName?: string; avatar: string | null; totalPnl: number; totalTrades: number; winRate: number; rank: number; roi: string; }
+interface Trade { id: string; pair: string; direction: string; lotSize: number; entryPrice: number; exitPrice: number | null; pnl: number; status: string; openedAt: string; competitor?: { username: string }; }
 
-interface Competitor {
-  id: string; username: string; displayName?: string; avatar: string | null;
-  initialBalance: number; currentBalance: number; totalPnl: number;
-  totalTrades: number; winRate: number; rank: number; roi: string;
-}
+// ═══════════════════════════════════════════════════════════════
+//  PAIR CONFIG (from Bullrush)
+// ═══════════════════════════════════════════════════════════════
+const PAIRS: Record<string, { g: string; f: string; p: number; vol: number; pip: number; d: number; ls: number; sp: number; }> = {
+  'EUR/USD': { g:'Forex Majors', f:'Euro / US Dollar', p:1.08470, vol:.00025, pip:.0001, d:5, ls:100000, sp:.00012 },
+  'GBP/USD': { g:'Forex Majors', f:'British Pound / US Dollar', p:1.27150, vol:.00030, pip:.0001, d:5, ls:100000, sp:.00015 },
+  'USD/JPY': { g:'Forex Majors', f:'US Dollar / Japanese Yen', p:155.320, vol:.035, pip:.01, d:3, ls:100000, sp:.015 },
+  'AUD/USD': { g:'Forex Majors', f:'Australian Dollar / US Dollar', p:0.65480, vol:.00020, pip:.0001, d:5, ls:100000, sp:.00014 },
+  'NZD/USD': { g:'Forex Majors', f:'New Zealand Dollar / US Dollar', p:0.60120, vol:.00018, pip:.0001, d:5, ls:100000, sp:.00016 },
+  'USD/CAD': { g:'Forex Majors', f:'US Dollar / Canadian Dollar', p:1.37250, vol:.00025, pip:.0001, d:5, ls:100000, sp:.00015 },
+  'EUR/GBP': { g:'Forex Crosses', f:'Euro / British Pound', p:.85320, vol:.00018, pip:.0001, d:5, ls:100000, sp:.00018 },
+  'EUR/JPY': { g:'Forex Crosses', f:'Euro / Japanese Yen', p:168.450, vol:.040, pip:.01, d:3, ls:100000, sp:.020 },
+  'GBP/JPY': { g:'Forex Crosses', f:'British Pound / Japanese Yen', p:197.380, vol:.045, pip:.01, d:3, ls:100000, sp:.025 },
+  'USD/CHF': { g:'Forex Majors', f:'US Dollar / Swiss Franc', p:0.88250, vol:.00022, pip:.0001, d:5, ls:100000, sp:.00012 },
+  'BTC/USD': { g:'Crypto', f:'Bitcoin', p:67432.18, vol:15, pip:.01, d:2, ls:1, sp:1.5 },
+  'ETH/USD': { g:'Crypto', f:'Ethereum', p:3521.07, vol:2.5, pip:.01, d:2, ls:1, sp:.8 },
+  'SOL/USD': { g:'Crypto', f:'Solana', p:172.44, vol:.8, pip:.01, d:2, ls:1, sp:.15 },
+  'XRP/USD': { g:'Crypto', f:'Ripple', p:.5234, vol:.002, pip:.0001, d:4, ls:1, sp:.0008 },
+  'DOGE/USD': { g:'Crypto', f:'Dogecoin', p:.1642, vol:.001, pip:.0001, d:4, ls:1, sp:.0005 },
+};
 
-interface Trade {
-  id: string; pair: string; direction: string; lotSize: number;
-  entryPrice: number; exitPrice: number | null; pnl: number;
-  status: string; openedAt: string; closedAt: string | null;
-  competitor?: { username: string; displayName?: string; avatar: string | null };
-}
-
-type AppState = 'loading' | 'landing' | 'enroll' | 'dashboard';
-
-// ── Forex pairs for ticker ────────────────────────────────────────────
 const TICKER_PAIRS = [
-  { pair: 'EUR/USD', price: 1.0876, change: 0.12 },
-  { pair: 'GBP/USD', price: 1.2734, change: -0.08 },
-  { pair: 'USD/JPY', price: 149.82, change: 0.34 },
-  { pair: 'AUD/USD', price: 0.6543, change: -0.21 },
-  { pair: 'USD/CAD', price: 1.3621, change: 0.05 },
-  { pair: 'NZD/USD', price: 0.6127, change: 0.18 },
-  { pair: 'EUR/GBP', price: 0.8542, change: -0.03 },
-  { pair: 'XAU/USD', price: 2342.50, change: 1.24 },
-  { pair: 'BTC/USD', price: 67842.00, change: 2.15 },
-  { pair: 'USD/CHF', price: 0.8834, change: -0.11 },
+  { pair:'EUR/USD', price:1.0876, change:0.12 }, { pair:'GBP/USD', price:1.2734, change:-0.08 },
+  { pair:'USD/JPY', price:149.82, change:0.34 }, { pair:'AUD/USD', price:0.6543, change:-0.21 },
+  { pair:'XAU/USD', price:2342.50, change:1.24 }, { pair:'BTC/USD', price:67842, change:2.15 },
+  { pair:'ETH/USD', price:3521, change:1.05 }, { pair:'SOL/USD', price:172.44, change:-0.45 },
 ];
 
-// ── Main Page ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════
+const fp = (p: number, dec?: number) => {
+  const d = dec ?? 5;
+  if (d <= 2 && Math.abs(p) >= 1000) return p.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return p.toFixed(d);
+};
+const ns = (range: number, ticks: number) => {
+  const r = range / ticks, m = Math.pow(10, Math.floor(Math.log10(Math.max(r, 1e-12))));
+  const n = r / m;
+  return Math.max((n <= 1.5 ? 1 : n <= 3.5 ? 2 : n <= 7.5 ? 5 : 10) * m, 1e-12);
+};
+const fmt$ = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2);
+const fmtBal = (v: number) => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN PAGE
+// ═══════════════════════════════════════════════════════════════
 export default function Home() {
-  const [appState, setAppState] = useState<AppState>('loading');
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [activeComp, setActiveComp] = useState<Competition | null>(null);
-  const [leaderboard, setLeaderboard] = useState<Competitor[]>([]);
+  // ── App state ─────────────────────────────────────────────────
+  const [phase, setPhase] = useState<'loading' | 'landing' | 'enroll' | 'arena'>('loading');
+  const [comp, setComp] = useState<Comp | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LbEntry[]>([]);
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
 
   // License form
-  const [licenseCode, setLicenseCode] = useState('');
+  const [code, setCode] = useState('');
   const [username, setUsername] = useState('');
   const [showCode, setShowCode] = useState(false);
-  const [licenseError, setLicenseError] = useState('');
-  const [licenseVerifying, setLicenseVerifying] = useState(false);
-  const [redeeming, setRedeeming] = useState(false);
-  const [verifiedClient, setVerifiedClient] = useState<{ clientName: string; email: string } | null>(null);
+  const [licErr, setLicErr] = useState('');
+  const [licBusy, setLicBusy] = useState(false);
+  const [redeemBusy, setRedeemBusy] = useState(false);
+  const [verifiedName, setVerifiedName] = useState('');
 
-  // My session
-  const [myCompetitor, setMyCompetitor] = useState<Competitor | null>(null);
+  // My profile
+  const [myName, setMyName] = useState('');
 
-  // Countdown
-  const [timeLeft, setTimeLeft] = useState('');
-
-  // ── Init: seed + fetch ───────────────────────────────────────────
+  // ── Init ─────────────────────────────────────────────────────
   useEffect(() => {
-    async function init() {
+    (async () => {
       try {
         await fetch('/api/seed', { method: 'POST' });
-        const compRes = await fetch('/api/competitions');
-        const comps = await compRes.json();
-        setCompetitions(comps);
-        const active = comps.find((c: Competition) => c.status === 'active') || comps[0];
-        if (active) {
-          setActiveComp(active);
-          const [lbRes, tradesRes] = await Promise.all([
-            fetch(`/api/leaderboard?competitionId=${active.id}`),
-            fetch(`/api/trades?competitionId=${active.id}`),
+        const cr = await fetch('/api/competitions');
+        const cs = await cr.json();
+        const a = cs.find((c: Comp) => c.status === 'active') || cs[0];
+        if (a) {
+          setComp(a);
+          const [lb, tr] = await Promise.all([
+            fetch(`/api/leaderboard?competitionId=${a.id}`).then(r => r.json()),
+            fetch(`/api/trades?competitionId=${a.id}`).then(r => r.json()),
           ]);
-          setLeaderboard(await lbRes.json());
-          setRecentTrades(await tradesRes.json());
+          setLeaderboard(lb);
+          setRecentTrades(tr);
         }
       } catch (e) { console.error(e); }
-      setAppState('landing');
-    }
-    init();
+      setPhase('landing');
+    })();
   }, []);
 
-  // ── Countdown ────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!activeComp) return;
-    const tick = () => {
-      const diff = Math.max(0, new Date(activeComp.endDate).getTime() - Date.now());
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff % 86400000) / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      setTimeLeft(`${String(d).padStart(2,'0')}:${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
-    };
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [activeComp]);
-
-  // ── Live P&L simulation ─────────────────────────────────────────
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLeaderboard(prev =>
-        prev.map(c => {
-          const f = (Math.random() - 0.45) * 30;
-          const np = parseFloat((c.totalPnl + f).toFixed(2));
-          return { ...c, totalPnl: np, currentBalance: parseFloat((c.initialBalance + np).toFixed(2)), roi: ((np / c.initialBalance) * 100).toFixed(2) };
-        }).sort((a, b) => b.totalPnl - a.totalPnl).map((c, i) => ({ ...c, rank: i + 1 }))
-      );
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // ── Verify license code ─────────────────────────────────────────
-  const verifyLicense = useCallback(async () => {
-    if (!licenseCode.trim()) return;
-    setLicenseVerifying(true);
-    setLicenseError('');
+  // ── Verify license ───────────────────────────────────────────
+  const verifyLic = useCallback(async () => {
+    if (!code.trim()) return;
+    setLicBusy(true); setLicErr('');
     try {
-      const res = await fetch(`/api/license?code=${encodeURIComponent(licenseCode.trim())}`);
-      const data = await res.json();
-      if (data.valid) {
-        setVerifiedClient({ clientName: data.clientName, email: data.email });
-        setAppState('enroll');
-      } else {
-        setLicenseError(data.error || 'Invalid code');
-      }
-    } catch { setLicenseError('Network error. Try again.'); }
-    setLicenseVerifying(false);
-  }, [licenseCode]);
+      const r = await fetch(`/api/license?code=${encodeURIComponent(code.trim())}`);
+      const d = await r.json();
+      if (d.valid) { setVerifiedName(d.clientName); setPhase('enroll'); }
+      else setLicErr(d.error || 'Invalid code');
+    } catch { setLicErr('Network error'); }
+    setLicBusy(false);
+  }, [code]);
 
-  // ── Redeem & Enroll ─────────────────────────────────────────────
-  const handleEnroll = useCallback(async () => {
-    if (!licenseCode.trim() || !username.trim() || !activeComp) return;
-    setRedeeming(true);
-    setLicenseError('');
+  // ── Redeem & enter arena ──────────────────────────────────────
+  const doEnroll = useCallback(async () => {
+    if (!code.trim() || !username.trim() || !comp) return;
+    setRedeemBusy(true); setLicErr('');
     try {
-      const res = await fetch('/api/license', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: licenseCode.trim(),
-          competitionId: activeComp.id,
-          username: username.trim(),
-        }),
+      const r = await fetch('/api/license', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code.trim(), competitionId: comp.id, username: username.trim() }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setMyCompetitor(data.competitor);
-        setAppState('dashboard');
-        const lbRes = await fetch(`/api/leaderboard?competitionId=${activeComp.id}`);
-        setLeaderboard(await lbRes.json());
-      } else {
-        setLicenseError(data.error || 'Enrollment failed');
-      }
-    } catch { setLicenseError('Network error. Try again.'); }
-    setRedeeming(false);
-  }, [licenseCode, username, activeComp]);
+      const d = await r.json();
+      if (d.success) {
+        setMyName(d.competitor.displayName || d.competitor.username);
+        const lb = await fetch(`/api/leaderboard?competitionId=${comp.id}`).then(r2 => r2.json());
+        setLeaderboard(lb);
+        setPhase('arena');
+      } else setLicErr(d.error || 'Failed');
+    } catch { setLicErr('Network error'); }
+    setRedeemBusy(false);
+  }, [code, username, comp]);
 
-  const topThree = leaderboard.slice(0, 3);
-
-  // ── Loading ─────────────────────────────────────────────────────
-  if (appState === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center animate-pulse-glow">
-            <TrendingUp className="h-6 w-6 text-white" />
-          </div>
-          <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
-          <p className="text-sm text-muted-foreground font-mono">Loading markets...</p>
+  // ═══════════════════════════════════════════════════════════════
+  //  LOADING
+  // ═══════════════════════════════════════════════════════════════
+  if (phase === 'loading') return (
+    <div className="h-screen flex items-center justify-center" style={{ background: '#07070c' }}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+          <Zap size={18} style={{ color: '#07070c' }} />
         </div>
+        <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#c8f542' }} />
       </div>
-    );
-  }
+    </div>
+  );
 
-  // ══════════════════════════════════════════════════════════════════
-  //  ENROLL / LICENSE FLOW
-  // ══════════════════════════════════════════════════════════════════
-  if (appState === 'enroll') {
-    return (
-      <div className="min-h-screen flex flex-col bg-background bg-grid bg-noise">
-        {/* Navbar */}
-        <nav className="sticky top-0 z-50 glass-strong border-b border-border/30">
-          <div className="mx-auto max-w-6xl flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
-                <TrendingUp className="h-4 w-4 text-white" />
-              </div>
-              <span className="text-lg font-bold tracking-tight">ForexRush</span>
-              <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px] px-1.5 py-0">
-                BETA
-              </Badge>
-            </div>
-            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => { setAppState('landing'); setVerifiedClient(null); setLicenseError(''); }}>
-              Back
-            </Button>
-          </div>
-        </nav>
-
-        <main className="flex-1 flex items-center justify-center px-4 py-12">
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.5 }}
-            className="w-full max-w-md"
-          >
-            <div className="glass rounded-2xl p-6 sm:p-8 glow-green">
-              {/* Verified badge */}
-              <div className="flex items-center gap-2 mb-6">
-                <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-emerald-400">Access Code Verified</p>
-                  <p className="text-xs text-muted-foreground">{verifiedClient?.clientName} &middot; {verifiedClient?.email}</p>
-                </div>
-              </div>
-
-              <h2 className="text-2xl font-bold mb-1">Create Your Trader Profile</h2>
-              <p className="text-sm text-muted-foreground mb-6">Choose a name that will appear on the live leaderboard.</p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Access Code</label>
-                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 border border-border/40">
-                    <Lock className="h-4 w-4 text-emerald-500" />
-                    <span className="font-mono text-sm text-emerald-400 tracking-wider">{licenseCode}</span>
-                    <Badge variant="outline" className="ml-auto border-emerald-500/30 text-emerald-400 text-[10px]">VERIFIED</Badge>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Trader Name</label>
-                  <Input
-                    placeholder="e.g. PipMaster_99"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    maxLength={20}
-                    className="bg-muted/50 border-border/40 focus:border-emerald-500/50 h-11 font-mono placeholder:font-sans placeholder:text-muted-foreground/50"
-                  />
-                  <p className="text-[11px] text-muted-foreground mt-1.5">This will be your identity on the leaderboard. No spaces.</p>
-                </div>
-
-                {licenseError && (
-                  <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                    <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-                    <p className="text-sm text-destructive">{licenseError}</p>
-                  </div>
-                )}
-
-                <Button
-                  className="w-full h-12 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-base mt-2 glow-green transition-all duration-200"
-                  onClick={handleEnroll}
-                  disabled={redeeming || !username.trim()}
-                >
-                  {redeeming ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                  Enter Competition
-                </Button>
-              </div>
-
-              <div className="mt-6 pt-5 border-t border-border/30 grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-lg font-bold text-foreground">$10K</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Virtual Balance</p>
-                </div>
-                <div>
-                  <p className="text-lg font-bold text-foreground">7d</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Duration</p>
-                </div>
-                <div>
-                  <p className="text-lg font-bold text-emerald-400">50%</p>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">1st Prize</p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </main>
-      </div>
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  //  DASHBOARD (after enrollment)
-  // ══════════════════════════════════════════════════════════════════
-  if (appState === 'dashboard' && myCompetitor) {
-    const myRank = leaderboard.find(c => c.id === myCompetitor.id)?.rank || leaderboard.length;
-    const myPnl = leaderboard.find(c => c.id === myCompetitor.id)?.totalPnl || 0;
-    const myRoi = leaderboard.find(c => c.id === myCompetitor.id)?.roi || '0.00';
-
-    return (
-      <div className="min-h-screen flex flex-col bg-background bg-grid bg-noise">
-        {/* Ticker tape */}
-        <div className="overflow-hidden border-b border-border/20 bg-surface">
-          <div className="flex animate-ticker whitespace-nowrap py-1.5 px-4">
-            {[...TICKER_PAIRS, ...TICKER_PAIRS].map((t, i) => (
-              <span key={i} className="inline-flex items-center gap-3 mx-6 text-xs">
-                <span className="text-muted-foreground font-medium">{t.pair}</span>
-                <span className="font-mono text-foreground tabular-nums">{t.price.toFixed(t.pair.includes('JPY') ? 2 : t.pair === 'XAU/USD' ? 2 : 4)}</span>
-                <span className={`font-mono tabular-nums ${t.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {t.change >= 0 ? '+' : ''}{t.change.toFixed(2)}%
-                </span>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <nav className="sticky top-0 z-50 glass-strong border-b border-border/30">
-          <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
-                <TrendingUp className="h-4 w-4 text-white" />
-              </div>
-              <span className="text-lg font-bold tracking-tight">ForexRush</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Badge variant="outline" className="hidden sm:flex items-center gap-1.5 border-emerald-500/40 text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                LIVE
-              </Badge>
-              <div className="flex items-center gap-2">
-                <Avatar className="h-7 w-7">
-                  <AvatarImage src={myCompetitor.avatar || undefined} />
-                  <AvatarFallback className="bg-emerald-900 text-emerald-300 text-xs">{myCompetitor.username.slice(0,2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <span className="text-sm font-medium hidden sm:inline">{myCompetitor.username}</span>
-              </div>
-            </div>
-          </div>
-        </nav>
-
-        <main className="flex-1 mx-auto w-full max-w-7xl px-4 py-6 sm:py-8">
-          {/* My Stats Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-            {[
-              { label: 'Rank', value: `#${myRank}`, sub: `of ${leaderboard.length}`, icon: Trophy, accent: false },
-              { label: 'Balance', value: `$${(myCompetitor.initialBalance + myPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: `${myPnl >= 0 ? '+' : ''}${myPnl.toFixed(2)} P&L`, icon: DollarSign, accent: myPnl >= 0 },
-              { label: 'ROI', value: `${parseFloat(myRoi) >= 0 ? '+' : ''}${myRoi}%`, sub: 'Return on investment', icon: BarChart3, accent: parseFloat(myRoi) >= 0 },
-              { label: 'Time Left', value: timeLeft, sub: activeComp?.title, icon: Timer, accent: false },
-            ].map((stat) => (
-              <motion.div key={stat.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                <Card className="glass border-border/30">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">{stat.label}</span>
-                      <stat.icon className={`h-4 w-4 ${stat.accent === false ? 'text-muted-foreground' : stat.accent ? 'text-emerald-400' : 'text-red-400'}`} />
-                    </div>
-                    <p className={`text-xl sm:text-2xl font-bold font-mono tabular-nums ${stat.accent === false ? '' : stat.accent ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {stat.value}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* Leaderboard + Trades */}
-          <div className="grid lg:grid-cols-3 gap-6">
-            {/* Leaderboard */}
-            <div className="lg:col-span-2">
-              <Card className="glass border-border/30 overflow-hidden">
-                <CardHeader className="pb-3 border-b border-border/20">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Trophy className="h-5 w-5 text-amber-400" />
-                      <CardTitle className="text-base">Leaderboard</CardTitle>
-                    </div>
-                    <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px]">
-                      {leaderboard.length} traders
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <div className="max-h-[560px] overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 glass-strong z-10">
-                      <tr className="border-b border-border/20">
-                        <th className="text-left py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider w-14">#</th>
-                        <th className="text-left py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Trader</th>
-                        <th className="text-right py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Win %</th>
-                        <th className="text-right py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">P&L</th>
-                        <th className="text-right py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">ROI</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <AnimatePresence>
-                        {leaderboard.map((c, i) => {
-                          const isMe = c.id === myCompetitor.id;
-                          return (
-                            <motion.tr
-                              key={c.id}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ duration: 0.2 }}
-                              className={`border-b border-border/15 transition-colors ${isMe ? 'bg-emerald-500/8' : 'hover:bg-muted/20'}`}
-                            >
-                              <td className="py-2.5 px-4">
-                                <span className={`inline-flex items-center justify-center h-6 w-6 rounded-md text-[11px] font-bold font-mono ${
-                                  i === 0 ? 'bg-amber-500/15 text-amber-400' :
-                                  i === 1 ? 'bg-gray-400/15 text-gray-300' :
-                                  i === 2 ? 'bg-orange-500/15 text-orange-400' :
-                                  isMe ? 'bg-emerald-500/15 text-emerald-400' :
-                                  'bg-muted/30 text-muted-foreground'
-                                }`}>
-                                  {c.rank}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-4">
-                                <div className="flex items-center gap-2.5">
-                                  <Avatar className="h-7 w-7">
-                                    <AvatarImage src={c.avatar || undefined} />
-                                    <AvatarFallback className="bg-muted text-[10px]">{c.username.slice(0,2).toUpperCase()}</AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <span className="font-medium text-sm">{c.displayName || c.username}</span>
-                                    {isMe && <span className="ml-1.5 text-[10px] text-emerald-400 font-medium">YOU</span>}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="py-2.5 px-4 text-right hidden sm:table-cell">
-                                <span className={`font-mono text-xs tabular-nums ${c.winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  {c.winRate.toFixed(1)}%
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-4 text-right">
-                                <span className={`inline-flex items-center gap-0.5 font-mono text-sm font-semibold tabular-nums ${c.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  {c.totalPnl >= 0 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                  {Math.abs(c.totalPnl).toFixed(2)}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-4 text-right">
-                                <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-mono font-semibold tabular-nums ${
-                                  parseFloat(c.roi) >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                                }`}>
-                                  {parseFloat(c.roi) >= 0 ? '+' : ''}{c.roi}%
-                                </span>
-                              </td>
-                            </motion.tr>
-                          );
-                        })}
-                      </AnimatePresence>
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </div>
-
-            {/* Recent Trades */}
-            <div className="space-y-4">
-              <Card className="glass border-border/30">
-                <CardHeader className="pb-3 border-b border-border/20">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-emerald-400" />
-                    <CardTitle className="text-base">Recent Trades</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-3">
-                  <div className="space-y-2 max-h-[460px] overflow-y-auto">
-                    {recentTrades.slice(0, 20).map((trade) => (
-                      <div key={trade.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 transition-colors">
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
-                          trade.direction === 'long' ? 'bg-emerald-500/10' : 'bg-red-500/10'
-                        }`}>
-                          {trade.direction === 'long'
-                            ? <TrendingUp className="h-4 w-4 text-emerald-400" />
-                            : <TrendingDown className="h-4 w-4 text-red-400" />
-                          }
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold">{trade.pair}</span>
-                            <span className={`font-mono text-sm font-semibold tabular-nums ${trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between mt-0.5">
-                            <span className="text-[11px] text-muted-foreground truncate max-w-[100px]">
-                              {trade.competitor?.displayName || trade.competitor?.username}
-                            </span>
-                            <Badge variant="outline" className={`text-[9px] px-1 py-0 ${
-                              trade.direction === 'long' ? 'border-emerald-500/30 text-emerald-400' : 'border-red-500/30 text-red-400'
-                            }`}>
-                              {trade.direction.toUpperCase()}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Prize Pool Mini */}
-              {activeComp && (
-                <Card className="glass border-border/30 glow-green">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Prize Pool</p>
-                    <p className="text-3xl font-extrabold text-gradient-green font-mono tabular-nums">
-                      ${(activeComp._count.competitors * 10).toLocaleString()}
-                    </p>
-                    <div className="flex justify-center gap-4 mt-3 text-xs">
-                      <div><span className="text-amber-400 font-bold">1st</span> <span className="text-muted-foreground">50%</span></div>
-                      <div><span className="text-gray-300 font-bold">2nd</span> <span className="text-muted-foreground">25%</span></div>
-                      <div><span className="text-orange-400 font-bold">3rd</span> <span className="text-muted-foreground">15%</span></div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        </main>
-
-        <footer className="border-t border-border/20 mt-auto">
-          <div className="mx-auto max-w-7xl px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-5 w-5 rounded-md bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
-                <TrendingUp className="h-2.5 w-2.5 text-white" />
-              </div>
-              <span className="text-xs text-muted-foreground">ForexRush &copy; {new Date().getFullYear()}</span>
-            </div>
-            <p className="text-[11px] text-muted-foreground">Simulated trading &middot; Not financial advice</p>
-          </div>
-        </footer>
-      </div>
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  //  LANDING PAGE
-  // ══════════════════════════════════════════════════════════════════
-  return (
-    <div className="min-h-screen flex flex-col bg-background bg-grid bg-noise">
-      {/* ── Ticker Tape ──────────────────────────────────────────── */}
-      <div className="overflow-hidden border-b border-border/20 bg-surface">
-        <div className="flex animate-ticker whitespace-nowrap py-1.5 px-4">
+  // ═══════════════════════════════════════════════════════════════
+  //  LANDING
+  // ═══════════════════════════════════════════════════════════════
+  if (phase === 'landing') return (
+    <div className="min-h-screen flex flex-col" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
+      {/* Ticker */}
+      <div className="overflow-hidden border-b" style={{ borderColor: '#1e1e30' }}>
+        <div className="flex animate-ticker whitespace-nowrap py-1 px-4" style={{ background: '#0d0d14' }}>
           {[...TICKER_PAIRS, ...TICKER_PAIRS].map((t, i) => (
-            <span key={i} className="inline-flex items-center gap-3 mx-6 text-xs">
-              <span className="text-muted-foreground font-medium">{t.pair}</span>
-              <span className="font-mono text-foreground tabular-nums">{t.price.toFixed(t.pair.includes('JPY') ? 2 : t.pair === 'XAU/USD' ? 2 : 4)}</span>
-              <span className={`font-mono tabular-nums ${t.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <span key={i} className="inline-flex items-center gap-2 mx-5 text-xs">
+              <span style={{ color: '#8585a0' }}>{t.pair}</span>
+              <span className="tabular-nums">{t.price.toFixed(t.pair === 'XAU/USD' ? 2 : 4)}</span>
+              <span className="tabular-nums" style={{ color: t.change >= 0 ? '#00e87b' : '#ff3b5c' }}>
                 {t.change >= 0 ? '+' : ''}{t.change.toFixed(2)}%
               </span>
             </span>
@@ -565,284 +169,735 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Navbar ───────────────────────────────────────────────── */}
-      <nav className="sticky top-0 z-50 glass-strong border-b border-border/30">
-        <div className="mx-auto max-w-6xl flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-lg font-bold tracking-tight">ForexRush</span>
-            <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px] px-1.5 py-0 hidden sm:inline-flex">
-              LIVE
-            </Badge>
+      <nav className="flex items-center justify-between px-4 h-12 border-b" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+        <div className="flex items-center gap-2">
+          <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+            <Zap size={12} style={{ color: '#07070c' }} />
           </div>
-          <Button
-            className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold text-sm glow-green transition-all duration-200"
-            onClick={() => { setAppState('loading'); setTimeout(() => setAppState('landing'), 50); }}
-          >
-            <Key className="h-3.5 w-3.5 mr-1.5" />
-            Redeem Code
-          </Button>
+          <span className="text-base font-bold tracking-tight">ForexRush</span>
+          {comp && <Badge className="text-[9px] px-1.5 py-0 border" style={{ borderColor: 'rgba(200,245,66,.3)', color: '#c8f542', background: 'transparent' }}>LIVE</Badge>}
         </div>
+        <Button onClick={() => setPhase('landing')} className="text-xs font-semibold h-8 px-4 rounded-lg" style={{ background: '#c8f542', color: '#07070c' }}>
+          <Key size={12} className="mr-1.5" /> Redeem Code
+        </Button>
       </nav>
 
-      <main className="flex-1">
-        {/* ── Hero ───────────────────────────────────────────────── */}
-        <section className="relative overflow-hidden">
-          {/* Ambient glow */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
-          <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-emerald-600/3 rounded-full blur-[100px] pointer-events-none" />
+      <main className="flex-1 flex items-center justify-center px-4">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-extrabold tracking-tight mb-2">Enter the Arena.</h1>
+            <p className="text-sm" style={{ color: '#8585a0' }}>Redeem your exclusive access code to join the forex competition.</p>
+          </div>
 
-          <div className="relative mx-auto max-w-6xl px-4 pt-16 sm:pt-24 pb-16 sm:pb-20 text-center">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-              <Badge variant="outline" className="mb-6 border-emerald-500/30 text-emerald-400 px-4 py-1.5 text-xs">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse mr-1.5" />
-                {activeComp ? `${activeComp._count.competitors} traders competing` : 'Competition Active'}
-              </Badge>
+          <div className="rounded-xl p-5 border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <Key size={16} style={{ color: '#c8f542' }} />
+              <span className="text-sm font-semibold">Redeem Access Code</span>
+            </div>
+            <div className="relative mb-3">
+              <input
+                placeholder="COMP-XXXX-XXXX" value={code} maxLength={14}
+                onChange={e => { setCode(e.target.value.toUpperCase()); setLicErr(''); }}
+                onKeyDown={e => e.key === 'Enter' && verifyLic()}
+                className="w-full h-11 rounded-lg text-center text-sm tracking-widest uppercase outline-none tabular-nums"
+                style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4', fontFamily: "'JetBrains Mono', monospace" }}
+              />
+            </div>
+            {licErr && <p className="text-xs mb-3 flex items-center gap-1" style={{ color: '#ff3b5c' }}><XCircle size={12} />{licErr}</p>}
+            <button onClick={verifyLic} disabled={licBusy || code.length < 14}
+              className="w-full h-10 rounded-lg text-sm font-bold transition-all duration-150 disabled:opacity-40"
+              style={{ background: '#c8f542', color: '#07070c' }}>
+              {licBusy ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Verify & Continue'}
+            </button>
+            <p className="text-[10px] text-center mt-3" style={{ color: '#505068' }}>15 exclusive codes &middot; Single-use &middot; 30-day validity</p>
+          </div>
 
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1]">
-                Enter the Arena.
-                <br />
-                <span className="text-gradient-green">Trade to the Top.</span>
-              </h1>
-
-              <p className="mx-auto mt-5 max-w-xl text-base sm:text-lg text-muted-foreground leading-relaxed">
-                Redeem your exclusive access code to join the competition.
-                Start with <span className="text-foreground font-semibold font-mono">$10,000</span> virtual balance.
-                Climb the leaderboard. Win real prizes.
-              </p>
-
-              {/* Stats row */}
-              {activeComp && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                  className="mt-10 grid grid-cols-3 gap-3 max-w-lg mx-auto"
-                >
-                  {[
-                    { icon: Users, label: 'Traders', value: activeComp._count.competitors.toString() },
-                    { icon: DollarSign, label: 'Prize Pool', value: `$${activeComp._count.competitors * 10}` },
-                    { icon: Timer, label: 'Ends In', value: timeLeft.split(':').slice(0, 2).join(':') },
-                  ].map((s) => (
-                    <div key={s.label} className="glass rounded-xl p-3">
-                      <s.icon className="h-4 w-4 mx-auto text-emerald-400 mb-1.5" />
-                      <p className="text-lg sm:text-xl font-bold font-mono tabular-nums">{s.value}</p>
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{s.label}</p>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-            </motion.div>
-
-            {/* ── License Code Input ────────────────────────────── */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-              className="mt-12 max-w-md mx-auto"
-            >
-              <div className="glass rounded-2xl p-6 glow-green">
-                <div className="flex items-center gap-2 mb-4">
-                  <Key className="h-5 w-5 text-emerald-400" />
-                  <h3 className="text-lg font-bold">Redeem Your Access Code</h3>
+          {/* Prize info */}
+          {comp && (
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              {[
+                { l: 'Traders', v: comp._count.competitors },
+                { l: 'Prize Pool', v: `$${comp._count.competitors * 10}` },
+                { l: '1st Prize', v: '50%' },
+              ].map(s => (
+                <div key={s.l} className="rounded-lg p-2 border" style={{ background: '#0d0d14', borderColor: '#1e1e30' }}>
+                  <p className="text-base font-bold tabular-nums">{s.v}</p>
+                  <p className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>{s.l}</p>
                 </div>
-                <p className="text-sm text-muted-foreground mb-4">Enter the code from your invitation to join the competition.</p>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      </main>
+    </div>
+  );
 
-                <div className="relative mb-3">
-                  <Input
-                    placeholder="COMP-XXXX-XXXX"
-                    value={licenseCode}
-                    onChange={e => { setLicenseCode(e.target.value.toUpperCase()); setLicenseError(''); }}
-                    className="h-12 bg-muted/50 border-border/40 focus:border-emerald-500/50 font-mono text-base tracking-widest text-center uppercase placeholder:tracking-normal placeholder:font-sans placeholder:text-sm"
-                    maxLength={14}
-                    onKeyDown={e => { if (e.key === 'Enter') verifyLicense(); }}
-                  />
-                  <button
-                    onClick={() => setShowCode(!showCode)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+  // ═══════════════════════════════════════════════════════════════
+  //  ENROLL
+  // ═══════════════════════════════════════════════════════════════
+  if (phase === 'enroll') return (
+    <div className="min-h-screen flex flex-col" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
+      <nav className="flex items-center gap-2 px-4 h-12 border-b" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+        <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+          <Zap size={12} style={{ color: '#07070c' }} />
+        </div>
+        <span className="text-base font-bold">ForexRush</span>
+        <Button variant="ghost" size="sm" className="ml-auto text-xs" style={{ color: '#8585a0' }} onClick={() => { setPhase('landing'); setVerifiedName(''); setLicErr(''); }}>Back</Button>
+      </nav>
+      <main className="flex-1 flex items-center justify-center px-4">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
+          <div className="rounded-xl p-5 border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <CheckCircle2 size={16} style={{ color: '#00e87b' }} />
+              <div>
+                <p className="text-xs font-semibold" style={{ color: '#00e87b' }}>Access Code Verified</p>
+                <p className="text-[10px]" style={{ color: '#8585a0' }}>{verifiedName}</p>
+              </div>
+            </div>
+            <h2 className="text-xl font-bold mb-1">Create Trader Profile</h2>
+            <p className="text-xs mb-4" style={{ color: '#8585a0' }}>Choose a name for the leaderboard.</p>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4" style={{ background: '#1a1a28', border: '1px solid #282840' }}>
+              <Lock size={12} style={{ color: '#c8f542' }} />
+              <span className="text-xs font-mono tracking-wider" style={{ color: '#c8f542' }}>{code}</span>
+              <Badge className="ml-auto text-[9px] border" style={{ borderColor: 'rgba(200,245,66,.3)', color: '#c8f542', background: 'transparent' }}>VERIFIED</Badge>
+            </div>
+            <input placeholder="e.g. PipMaster_99" value={username} maxLength={20}
+              onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && doEnroll()}
+              className="w-full h-10 rounded-lg px-3 text-sm outline-none mb-1"
+              style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4' }} />
+            {licErr && <p className="text-xs mb-2 flex items-center gap-1" style={{ color: '#ff3b5c' }}><XCircle size={12} />{licErr}</p>}
+            <button onClick={doEnroll} disabled={redeemBusy || !username.trim()}
+              className="w-full h-10 rounded-lg text-sm font-bold mt-2 disabled:opacity-40"
+              style={{ background: '#c8f542', color: '#07070c' }}>
+              {redeemBusy ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Enter Competition'}
+            </button>
+          </div>
+        </motion.div>
+      </main>
+    </div>
+  );
+
+  // ═══════════════════════════════════════════════════════════════
+  //  TRADING ARENA (combined Bullrush + ForexRush)
+  // ═══════════════════════════════════════════════════════════════
+  return <TradingArena leaderboard={leaderboard} myName={myName} compId={comp?.id || ''} />;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TRADING ARENA COMPONENT
+// ═══════════════════════════════════════════════════════════════════
+function TradingArena({ leaderboard, myName, compId }: { leaderboard: LbEntry[]; myName: string; compId: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [activePair, setActivePair] = useState('EUR/USD');
+  const [side, setSide] = useState<'buy' | 'sell'>('buy');
+  const [leverage, setLeverage] = useState(10);
+  const [lotSize, setLotSize] = useState('0.10');
+  const [bottomTab, setBottomTab] = useState<'positions' | 'leaderboard' | 'history'>('positions');
+  const [toasts, setToasts] = useState<{ id: number; msg: string; type: 's' | 'e' | 'i' }[]>([]);
+
+  // Trading state
+  const balanceRef = useRef(10000);
+  const [balance, setBalance] = useState(10000);
+  const positionsRef = useRef<any[]>([]);
+  const [positions, setPositions] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [totalPnl, setTotalPnl] = useState(0);
+
+  // Chart state
+  const [pairData, setPairData] = useState<Record<string, { cn: any[]; cp: number; ch: number }>>({});
+  const [sO, setSO] = useState(0);
+  const vc = 80;
+  const crosshair = useRef({ x: null as number | null, y: null as number | null });
+  const isDrag = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartO = useRef(0);
+
+  // ── Generate candle data ─────────────────────────────────────
+  const genCandles = useCallback((n: number, start: number, vol: number) => {
+    const d: any[] = []; let pr = start; const now = Date.now();
+    for (let i = 0; i < n; i++) {
+      const dr = (Math.random() - 0.48) * vol, o = pr, c = o + dr;
+      const h = Math.max(o, c) + Math.random() * vol * 0.8;
+      const l = Math.min(o, c) - Math.random() * vol * 0.8;
+      d.push({ o, h, l, c, v: 50 + Math.random() * 450, t: now - (n - i) * 15 * 60000 });
+      pr = c;
+    }
+    return d;
+  }, []);
+
+  // ── Init pair data ───────────────────────────────────────────
+  useEffect(() => {
+    const pd: Record<string, { cn: any[]; cp: number; ch: number }> = {};
+    for (const [s, c] of Object.entries(PAIRS)) {
+      const cn = genCandles(300, c.p, c.vol);
+      const cp = cn[cn.length - 1].c;
+      pd[s] = { cn, cp, ch: ((cp - cn[0].o) / cn[0].o) * 100 };
+    }
+    setPairData(pd);
+  }, [genCandles]);
+
+  // ── Price tick ───────────────────────────────────────────────
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setPairData(prev => {
+        const next = { ...prev };
+        for (const [s, cfg] of Object.entries(PAIRS)) {
+          if (!next[s]) continue;
+          const cn = [...next[s].cn];
+          const last = cn[cn.length - 1];
+          const drift = (Math.random() - 0.48) * cfg.vol * 0.3;
+          const newC = last.c + drift;
+          const newO = last.c;
+          const h = Math.max(newO, newC) + Math.random() * cfg.vol * 0.15;
+          const l = Math.min(newO, newC) - Math.random() * cfg.vol * 0.15;
+          cn.push({ o: newO, h, l, c: newC, v: 50 + Math.random() * 200, t: Date.now() });
+          if (cn.length > 500) cn.shift();
+          next[s] = { ...next[s], cn, cp: newC, ch: ((newC - cn[0].o) / cn[0].o) * 100 };
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // ── Update positions P&L ─────────────────────────────────────
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const pd = pairData;
+      positionsRef.current = positionsRef.current.map(p => {
+        const d = pd[p.pair];
+        if (!d) return p;
+        const cfg = PAIRS[p.pair];
+        if (!cfg) return p;
+        const dir = p.side === 'Long' ? 1 : -1;
+        let pnl = (d.cp - p.entry) * p.size * cfg.ls * dir;
+        if (p.pair.includes('JPY') && !p.pair.startsWith('XRP') && !p.pair.startsWith('DOGE')) pnl /= d.cp;
+        return { ...p, mark: d.cp, pnl };
+      });
+      const tp = positionsRef.current.reduce((s: number, p: any) => s + p.pnl, 0);
+      setTotalPnl(tp);
+      setBalance(balanceRef.current + tp);
+      setPositions([...positionsRef.current]);
+    }, 500);
+    return () => clearInterval(iv);
+  }, [pairData]);
+
+  // ── Canvas chart drawing ─────────────────────────────────────
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap || !pairData[activePair]) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = wrap.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = rect.width, ch = rect.height;
+    canvas.width = cw * dpr; canvas.height = ch * dpr;
+    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const d = pairData[activePair];
+    const cfg = PAIRS[activePair];
+    const cn = d.cn;
+    ctx.clearRect(0, 0, cw, ch);
+
+    const paW = cfg.d <= 2 ? 78 : 88, taH = 22;
+    const aW = cw - paW, aH = ch - taH;
+    if (aW <= 0 || aH <= 0) return;
+
+    const vC = Math.min(vc, cn.length);
+    const sI = Math.max(0, Math.min(sO, cn.length - vC));
+    const eI = Math.min(cn.length, sI + vC);
+    const vis = cn.slice(sI, eI);
+    if (!vis.length) return;
+
+    let mn = Infinity, mx = -Infinity;
+    vis.forEach((c: any) => { mn = Math.min(mn, c.l); mx = Math.max(mx, c.h); });
+    const pP = (mx - mn) * 0.08 || cfg.vol; mn -= pP; mx += pP;
+    const pY = (p: number) => aH - ((p - mn) / (mx - mn)) * aH;
+    const cW2 = Math.max(1, (aW / vC) * 0.7);
+    const gap = aW / vC;
+    const iX = (i: number) => i * gap + gap * 0.5;
+
+    // Grid
+    ctx.strokeStyle = 'rgba(40,40,64,.5)'; ctx.lineWidth = 0.5;
+    const ps = ns(mx - mn, 6);
+    let gp = Math.ceil(mn / ps) * ps;
+    ctx.font = '9px "JetBrains Mono", monospace'; ctx.textAlign = 'right';
+    while (gp < mx) {
+      const y = pY(gp);
+      if (y > 0 && y < aH) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(aW, y); ctx.stroke(); ctx.fillStyle = '#404060'; ctx.fillText(fp(gp, cfg.d), aW + paW - 5, y + 3); }
+      gp += ps;
+    }
+
+    // Candles
+    vis.forEach((c: any, i: number) => {
+      const x = iX(i);
+      const gn = c.c >= c.o;
+      const col = gn ? '#00e87b' : '#ff3b5c';
+      ctx.strokeStyle = col; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, pY(c.h)); ctx.lineTo(x, pY(c.l)); ctx.stroke();
+      const bt = pY(Math.max(c.o, c.c)), bb = pY(Math.min(c.o, c.c));
+      ctx.fillStyle = col; ctx.fillRect(x - cW2 / 2, bt, cW2, Math.max(1, bb - bt));
+    });
+
+    // Price line
+    const lY = pY(d.cp);
+    const lg = vis.length > 0 && vis[vis.length - 1].c >= vis[vis.length - 1].o;
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = lg ? 'rgba(0,232,123,.5)' : 'rgba(255,59,92,.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, lY); ctx.lineTo(aW, lY); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = lg ? '#00e87b' : '#ff3b5c';
+    ctx.beginPath(); ctx.roundRect(aW, lY - 9, paW, 18, 3); ctx.fill();
+    ctx.fillStyle = '#07070c'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText(fp(d.cp, cfg.d), aW + paW / 2, lY + 3);
+
+    // Crosshair
+    const xh = crosshair.current;
+    if (xh.x !== null && xh.y !== null && xh.x < aW && xh.y < aH) {
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(200,245,66,.3)'; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(xh.x, 0); ctx.lineTo(xh.x, aH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, xh.y); ctx.lineTo(aW, xh.y); ctx.stroke(); ctx.setLineDash([]);
+      const hp = mn + (1 - xh.y / aH) * (mx - mn);
+      ctx.fillStyle = '#c8f542'; ctx.beginPath(); ctx.roundRect(aW, xh.y - 9, paW, 18, 3); ctx.fill();
+      ctx.fillStyle = '#07070c'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+      ctx.fillText(fp(hp, cfg.d), aW + paW / 2, xh.y + 3);
+    }
+
+    // Border
+    ctx.strokeStyle = '#282840'; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, aW - 0.5, aH - 0.5);
+  }, [pairData, activePair, sO]);
+
+  // ── Chart resize ─────────────────────────────────────────────
+  useEffect(() => {
+    draw();
+    const onResize = () => draw();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [draw]);
+
+  // Re-draw on data/pair change
+  useEffect(() => { setSO(pairData[activePair]?.cn.length - vc || 0); }, [activePair]);
+  useEffect(() => { draw(); }, [draw]);
+
+  // ── Chart mouse events ───────────────────────────────────────
+  const onCanvasMove = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const r = canvas.getBoundingClientRect();
+    crosshair.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+    if (isDrag.current) {
+      const dx = e.clientX - dragStartX.current;
+      const cd = Math.round(dx / (r.width / vc));
+      const cnLen = pairData[activePair]?.cn.length || 0;
+      setSO(Math.max(0, Math.min(cnLen - vc, dragStartO.current - cd)));
+    }
+  };
+  const onCanvasDown = (e: React.MouseEvent) => {
+    isDrag.current = true;
+    dragStartX.current = e.clientX;
+    dragStartO.current = sO;
+  };
+  const onCanvasUp = () => { isDrag.current = false; };
+  const onCanvasLeave = () => { crosshair.current = { x: null, y: null }; isDrag.current = false; };
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    setSO(prev => Math.max(0, Math.min((pairData[activePair]?.cn.length || 0) - 20, prev + (e.deltaY > 0 ? 5 : -5))));
+  };
+
+  // ── Toast helper ─────────────────────────────────────────────
+  const toast = (msg: string, type: 's' | 'e' | 'i' = 'i') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  };
+
+  // ── Execute trade ────────────────────────────────────────────
+  const executeTrade = async () => {
+    if (!compId) return;
+    const size = parseFloat(lotSize);
+    if (!size || size <= 0) { toast('Invalid lot size', 'e'); return; }
+    const d = pairData[activePair];
+    if (!d) return;
+    const cfg = PAIRS[activePair];
+    const margin = (size * cfg.ls * d.cp) / leverage;
+    if (margin > balanceRef.current) { toast('Insufficient margin', 'e'); return; }
+
+    // Create position locally
+    const pos = {
+      id: Date.now().toString(),
+      pair: activePair,
+      side: side === 'buy' ? 'Long' : 'Short',
+      size,
+      entry: d.cp,
+      mark: d.cp,
+      pnl: 0,
+      leverage,
+      time: new Date().toISOString(),
+    };
+    positionsRef.current = [...positionsRef.current, pos];
+    setPositions([...positionsRef.current]);
+
+    // Save to DB
+    try {
+      await fetch('/api/trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          competitorId: '', competitionId: compId,
+          pair: activePair, direction: side === 'buy' ? 'long' : 'short', lotSize: size,
+        }),
+      });
+    } catch { /* silent */ }
+
+    toast(`${side === 'buy' ? 'Bought' : 'Sold'} ${size} ${activePair} @ ${fp(d.cp, cfg.d)}`, 's');
+  };
+
+  // ── Close position ───────────────────────────────────────────
+  const closePosition = (idx: number) => {
+    const p = positionsRef.current[idx];
+    if (!p) return;
+    balanceRef.current += p.pnl;
+    setBalance(balanceRef.current);
+    setHistory(prev => [{ ...p, exit: p.mark, time: new Date().toISOString() }, ...prev]);
+    positionsRef.current.splice(idx, 1);
+    setPositions([...positionsRef.current]);
+    toast(`Closed ${p.pair} ${p.side} — P&L: ${fmt$(p.pnl)}`, p.pnl >= 0 ? 's' : 'e');
+  };
+
+  const cfg = PAIRS[activePair];
+  const pd = pairData[activePair];
+  const chClass = pd && pd.ch >= 0 ? 'up' : 'dn';
+  const chColor = pd && pd.ch >= 0 ? '#00e87b' : '#ff3b5c';
+  const chBg = pd && pd.ch >= 0 ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)';
+
+  // ═══════════════════════════════════════════════════════════
+  //  RENDER
+  // ═══════════════════════════════════════════════════════════
+  return (
+    <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
+      {/* ── Header ──────────────────────────────────────────── */}
+      <header className="flex items-center px-3 h-12 border-b shrink-0 gap-1.5" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+        <div className="flex items-center gap-1.5 mr-3">
+          <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+            <Zap size={12} style={{ color: '#07070c' }} />
+          </div>
+          <span className="text-sm font-bold tracking-tight">ForexRush</span>
+        </div>
+        <div className="h-6 w-px mx-1" style={{ background: '#282840' }} />
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: '#13131d', border: '1px solid #282840' }}>
+          <span className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>Balance</span>
+          <span className="text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtBal(balance)}</span>
+        </div>
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: '#13131d', border: '1px solid #282840' }}>
+          <span className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>P&L</span>
+          <span className="text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(totalPnl)}</span>
+        </div>
+        <div className="h-6 w-px mx-1" style={{ background: '#282840' }} />
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg ml-auto" style={{ background: '#13131d', border: '1px solid #282840' }}>
+          <span className="text-[10px] uppercase tracking-wider" style={{ color: '#505068' }}>LIVE</span>
+          <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
+        </div>
+        <div className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold cursor-pointer" style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
+          {myName.slice(0, 2).toUpperCase()}
+        </div>
+      </header>
+
+      {/* ── Main grid: chart + sidebar ──────────────────────── */}
+      <div className="flex-1 grid overflow-hidden" style={{ gridTemplateColumns: '1fr 320px' }}>
+        {/* Chart section */}
+        <section className="flex flex-col overflow-hidden min-w-0">
+          {/* Toolbar */}
+          <div className="flex items-center gap-1 px-2.5 py-1.5 border-b shrink-0 flex-wrap" style={{ borderColor: '#282840' }}>
+            {/* Pair selector */}
+            <select value={activePair} onChange={e => setActivePair(e.target.value)}
+              className="h-7 px-2 rounded-md text-xs font-semibold outline-none cursor-pointer"
+              style={{ background: '#13131d', border: '1px solid #282840', color: '#ededf4' }}>
+              {Object.entries(PAIRS).map(([s, c]) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {pd && (
+              <>
+                <span className="text-[11px] tabular-nums ml-1" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{fp(pd.cp, cfg.d)}</span>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: chColor, background: chBg }}>
+                  {pd.ch >= 0 ? '+' : ''}{pd.ch.toFixed(2)}%
+                </span>
+              </>
+            )}
+            <div className="h-5 w-px mx-1" style={{ background: '#282840' }} />
+            <div className="flex items-center gap-2">
+              {['1m', '5m', '15m', '1H', '4H', '1D'].map(tf => (
+                <button key={tf} className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors duration-150 ${tf === '15m' ? '' : ''}`}
+                  style={{ color: tf === '15m' ? '#ededf4' : '#505068', background: tf === '15m' ? '#1a1a28' : 'transparent', border: 'none', cursor: 'pointer' }}>
+                  {tf}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Canvas */}
+          <div ref={wrapRef} className="flex-1 relative min-h-0" style={{ background: '#07070c' }}>
+            <canvas ref={canvasRef} onMouseMove={onCanvasMove} onMouseDown={onCanvasDown} onMouseUp={onCanvasUp} onMouseLeave={onCanvasLeave} onWheel={onWheel} className="absolute inset-0" />
+          </div>
+        </section>
+
+        {/* ── Sidebar ───────────────────────────────────────── */}
+        <aside className="flex flex-col overflow-hidden border-l" style={{ borderColor: '#282840', background: '#0d0d14' }}>
+          {/* PnL summary */}
+          <div className="px-3.5 py-2.5 border-b" style={{ background: 'linear-gradient(135deg, rgba(200,245,66,.03), rgba(0,232,123,.02))', borderColor: '#282840' }}>
+            <div className="text-center text-lg font-bold tabular-nums py-1" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+              {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}
+            </div>
+            <div className="flex justify-between text-[11px] py-0.5">
+              <span style={{ color: '#505068' }}>Open Positions</span>
+              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{positions.length}</span>
+            </div>
+            <div className="flex justify-between text-[11px] py-0.5">
+              <span style={{ color: '#505068' }}>Available Margin</span>
+              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{fmtBal(balance)}</span>
+            </div>
+          </div>
+
+          {/* Trading panel */}
+          <div className="px-3.5 py-3 border-b" style={{ borderColor: '#282840' }}>
+            {/* Buy/Sell toggle */}
+            <div className="grid grid-cols-2 gap-0.5 mb-3 p-0.5 rounded-lg" style={{ background: '#1a1a28' }}>
+              <button onClick={() => setSide('buy')} className="py-1.5 rounded-md text-xs font-semibold transition-all duration-150 border-none cursor-pointer"
+                style={{ background: side === 'buy' ? '#00e87b' : 'transparent', color: side === 'buy' ? '#0a0a0f' : '#505068', boxShadow: side === 'buy' ? '0 3px 12px rgba(0,232,123,.2)' : 'none' }}>
+                Buy / Long
+              </button>
+              <button onClick={() => setSide('sell')} className="py-1.5 rounded-md text-xs font-semibold transition-all duration-150 border-none cursor-pointer"
+                style={{ background: side === 'sell' ? '#ff3b5c' : 'transparent', color: side === 'sell' ? '#fff' : '#505068', boxShadow: side === 'sell' ? '0 3px 12px rgba(255,59,92,.2)' : 'none' }}>
+                Sell / Short
+              </button>
+            </div>
+
+            {/* Lot size */}
+            <div className="mb-2.5">
+              <div className="flex justify-between text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>
+                <span>Size (Lots)</span>
+                <span className="tabular-nums normal-case" style={{ color: '#8585a0', fontFamily: "'JetBrains Mono', monospace" }}>$0.00</span>
+              </div>
+              <input type="number" value={lotSize} onChange={e => setLotSize(e.target.value)} step="0.01" placeholder="0.00"
+                className="w-full h-9 px-2.5 rounded-lg text-sm outline-none tabular-nums"
+                style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4', fontFamily: "'JetBrains Mono', monospace" }} />
+              <div className="grid grid-cols-4 gap-0.5 mt-1.5">
+                {[25, 50, 75, 100].map(pct => (
+                  <button key={pct} onClick={() => setLotSize('1.00')} className="py-1 rounded text-[10px] font-semibold transition-all duration-150 border-none cursor-pointer"
+                    style={{ background: '#1a1a28', border: '1px solid #282840', color: '#8585a0' }}>
+                    {pct}%
                   </button>
-                </div>
-
-                {licenseError && (
-                  <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-2 mb-3 text-sm text-red-400">
-                    <XCircle className="h-4 w-4 shrink-0" />
-                    {licenseError}
-                  </motion.div>
-                )}
-
-                <Button
-                  className="w-full h-11 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-sm glow-green transition-all duration-200"
-                  onClick={verifyLicense}
-                  disabled={licenseVerifying || licenseCode.trim().length < 14}
-                >
-                  {licenseVerifying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
-                  Verify & Continue
-                </Button>
-
-                <p className="text-[11px] text-muted-foreground mt-3 text-center">
-                  15 exclusive access codes issued &middot; Each code is single-use &middot; Valid for 30 days
-                </p>
-              </div>
-            </motion.div>
-          </div>
-        </section>
-
-        {/* ── Top 3 Podium ───────────────────────────────────────── */}
-        {topThree.length >= 3 && (
-          <section className="mx-auto max-w-6xl px-4 py-16">
-            <div className="text-center mb-10">
-              <h2 className="text-2xl sm:text-3xl font-bold">Top Performers</h2>
-              <p className="text-sm text-muted-foreground mt-2">Live leaderboard — updated in real-time</p>
-            </div>
-
-            <div className="flex items-end justify-center gap-3 sm:gap-5 max-w-2xl mx-auto">
-              {/* 2nd */}
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex flex-col items-center w-1/3">
-                <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-gray-400/50">
-                  <AvatarImage src={topThree[1].avatar || undefined} />
-                  <AvatarFallback className="bg-gray-700/50 text-gray-300 text-xs">{topThree[1].username.slice(0,2)}</AvatarFallback>
-                </Avatar>
-                <p className="mt-2 text-xs sm:text-sm font-semibold truncate w-full text-center">{topThree[1].displayName || topThree[1].username}</p>
-                <p className={`text-xs sm:text-sm font-bold font-mono tabular-nums ${topThree[1].totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {topThree[1].totalPnl >= 0 ? '+' : ''}{topThree[1].totalPnl.toFixed(0)}
-                </p>
-                <div className="w-full mt-2 rounded-t-xl glass border-b-0 flex items-center justify-center py-3 sm:py-6">
-                  <Medal className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400" />
-                </div>
-              </motion.div>
-
-              {/* 1st */}
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="flex flex-col items-center w-1/3">
-                <Crown className="h-5 w-5 text-amber-400 mb-1" />
-                <Avatar className="h-14 w-14 sm:h-16 sm:w-16 border-2 border-amber-400/70 shadow-lg shadow-amber-400/10">
-                  <AvatarImage src={topThree[0].avatar || undefined} />
-                  <AvatarFallback className="bg-amber-900/50 text-amber-300 text-sm">{topThree[0].username.slice(0,2)}</AvatarFallback>
-                </Avatar>
-                <p className="mt-2 text-sm sm:text-base font-bold truncate w-full text-center">{topThree[0].displayName || topThree[0].username}</p>
-                <p className="text-sm sm:text-base font-bold text-emerald-400 font-mono tabular-nums">
-                  +{topThree[0].totalPnl.toFixed(0)}
-                </p>
-                <div className="w-full mt-2 rounded-t-xl glass border-b-0 flex items-center justify-center py-5 sm:py-10 glow-green-strong">
-                  <div className="text-center">
-                    <Crown className="h-6 w-6 sm:h-8 sm:w-8 text-amber-400 mx-auto" />
-                    <span className="text-xs text-amber-400 font-bold mt-1 block">#1</span>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 3rd */}
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="flex flex-col items-center w-1/3">
-                <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-orange-400/50">
-                  <AvatarImage src={topThree[2].avatar || undefined} />
-                  <AvatarFallback className="bg-orange-900/50 text-orange-300 text-xs">{topThree[2].username.slice(0,2)}</AvatarFallback>
-                </Avatar>
-                <p className="mt-2 text-xs sm:text-sm font-semibold truncate w-full text-center">{topThree[2].displayName || topThree[2].username}</p>
-                <p className={`text-xs sm:text-sm font-bold font-mono tabular-nums ${topThree[2].totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {topThree[2].totalPnl >= 0 ? '+' : ''}{topThree[2].totalPnl.toFixed(0)}
-                </p>
-                <div className="w-full mt-2 rounded-t-xl glass border-b-0 flex items-center justify-center py-2 sm:py-4">
-                  <Award className="h-5 w-5 sm:h-6 sm:w-6 text-orange-400" />
-                </div>
-              </motion.div>
-            </div>
-          </section>
-        )}
-
-        {/* ── How It Works ───────────────────────────────────────── */}
-        <section className="mx-auto max-w-6xl px-4 py-16">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-bold">How It Works</h2>
-            <p className="text-sm text-muted-foreground mt-2">Three steps to start competing</p>
-          </div>
-          <div className="grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
-            {[
-              { step: '01', icon: Key, title: 'Redeem Code', desc: 'Enter your exclusive access code to unlock the competition. Single-use, 30-day validity.' },
-              { step: '02', icon: BarChart3, title: 'Trade & Compete', desc: 'Get $10,000 virtual balance. Execute trades and climb the live leaderboard.' },
-              { step: '03', icon: Trophy, title: 'Win Prizes', desc: 'Top performers take the prize pool. 1st place wins 50% — pure skill, no luck.' },
-            ].map((item, idx) => (
-              <motion.div key={item.step} initial={{ opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: idx * 0.1 }}>
-                <Card className="glass border-border/30 h-full hover:border-emerald-500/20 transition-colors duration-300">
-                  <CardContent className="pt-6">
-                    <span className="text-3xl font-black text-emerald-500/15 font-mono">{item.step}</span>
-                    <div className="h-9 w-9 rounded-lg bg-emerald-500/10 flex items-center justify-center mt-2 mb-3">
-                      <item.icon className="h-4 w-4 text-emerald-400" />
-                    </div>
-                    <h3 className="font-bold mb-1.5">{item.title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* ── Prize Breakdown ────────────────────────────────────── */}
-        {activeComp && (
-          <section className="mx-auto max-w-6xl px-4 py-16">
-            <div className="glass rounded-2xl p-6 sm:p-8 glow-green">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl sm:text-3xl font-bold">Prize Distribution</h2>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Total Pool: <span className="text-2xl font-extrabold text-gradient-green font-mono tabular-nums">${(activeComp._count.competitors * 10).toLocaleString()}</span>
-                </p>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto">
-                {[
-                  { rank: '1st', pct: '50%', amount: (activeComp._count.competitors * 10 * 0.5), icon: Crown, color: 'text-amber-400' },
-                  { rank: '2nd', pct: '25%', amount: (activeComp._count.competitors * 10 * 0.25), icon: Medal, color: 'text-gray-300' },
-                  { rank: '3rd', pct: '15%', amount: (activeComp._count.competitors * 10 * 0.15), icon: Award, color: 'text-orange-400' },
-                  { rank: '4-10', pct: '10%', amount: (activeComp._count.competitors * 10 * 0.1), icon: BarChart3, color: 'text-muted-foreground' },
-                ].map((p) => (
-                  <div key={p.rank} className="text-center p-3 rounded-xl glass-subtle">
-                    <p.icon className={`h-6 w-6 mx-auto mb-2 ${p.color}`} />
-                    <p className="text-2xl font-extrabold font-mono tabular-nums">{p.pct}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{p.rank} Place</p>
-                    <p className="text-sm font-semibold font-mono tabular-nums mt-1 text-emerald-400">${p.amount.toFixed(0)}</p>
-                  </div>
                 ))}
               </div>
             </div>
-          </section>
-        )}
 
-        {/* ── Features ───────────────────────────────────────────── */}
-        <section className="mx-auto max-w-6xl px-4 py-16">
-          <div className="grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
-            {[
-              { icon: Shield, title: 'Fair Competition', desc: 'Everyone starts equal with $10K. No hidden advantages — pure skill determines the winner.' },
-              { icon: Zap, title: 'Real-Time Leaderboard', desc: 'Live P&L updates every few seconds. Watch the rankings shift as traders execute.' },
-              { icon: Lock, title: 'Exclusive Access', desc: 'Invitation-only. 15 access codes per round keeps the competition elite.' },
-            ].map((item) => (
-              <Card key={item.title} className="glass border-border/30 hover:border-emerald-500/20 transition-colors duration-300">
-                <CardContent className="pt-5 text-center">
-                  <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center mx-auto mb-3">
-                    <item.icon className="h-5 w-5 text-emerald-400" />
-                  </div>
-                  <h3 className="font-bold mb-1.5">{item.title}</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-      </main>
-
-      {/* ── Footer ───────────────────────────────────────────────── */}
-      <footer className="border-t border-border/20 mt-auto">
-        <div className="mx-auto max-w-6xl px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-5 w-5 rounded-md bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
-              <TrendingUp className="h-2.5 w-2.5 text-white" />
+            {/* Leverage */}
+            <div className="mb-3">
+              <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>Leverage</div>
+              <div className="flex gap-0.5 flex-wrap">
+                {[1, 2, 5, 10, 25, 50].map(lv => (
+                  <button key={lv} onClick={() => setLeverage(lv)} className="px-2.5 py-1 rounded text-[11px] font-semibold transition-all duration-150 border-none cursor-pointer"
+                    style={{ background: leverage === lv ? 'rgba(200,245,66,.1)' : '#1a1a28', border: leverage === lv ? '1px solid rgba(200,245,66,.3)' : '1px solid #282840', color: leverage === lv ? '#c8f542' : '#8585a0' }}>
+                    {lv}x
+                  </button>
+                ))}
+              </div>
             </div>
-            <span className="text-xs text-muted-foreground">ForexRush &copy; {new Date().getFullYear()}</span>
+
+            {/* Execute button */}
+            <button onClick={executeTrade}
+              className="w-full h-10 rounded-lg text-sm font-bold transition-all duration-200 border-none cursor-pointer"
+              style={{ background: side === 'buy' ? '#00e87b' : '#ff3b5c', color: side === 'buy' ? '#0a0a0f' : '#fff' }}>
+              {side === 'buy' ? 'Buy / Long' : 'Sell / Short'} {activePair}
+            </button>
           </div>
-          <p className="text-[11px] text-muted-foreground">Simulated trading competition &middot; Not financial advice</p>
+
+          {/* Order book */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center px-3 py-2 border-b text-[11px] font-semibold" style={{ borderColor: '#282840' }}>
+              <span>Order Book</span>
+              <span style={{ color: '#505068', fontSize: '10px' }}>{activePair}</span>
+            </div>
+            <div className="grid grid-cols-3 text-[9px] uppercase tracking-wider px-3 py-1 border-b" style={{ color: '#505068', borderColor: '#1e1e30' }}>
+              <span>Price</span><span className="text-right">Amount</span><span className="text-right">Total</span>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {/* Asks (sells) */}
+              {Array.from({ length: 8 }).map((_, i) => {
+                const base = pd?.cp || cfg.p;
+                const askP = base + cfg.sp / 2 + (i + 1) * cfg.sp * (0.5 + Math.random() * 2);
+                const amt = (Math.random() * 1.5 + 0.05).toFixed(cfg.d);
+                return (
+                  <div key={`a${i}`} className="grid grid-cols-3 px-3 py-0.5 text-[10px] relative cursor-pointer transition-colors duration-75 hover:bg-[#1a1a28]"
+                    style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                    <div className="absolute right-0 top-0 bottom-0 opacity-[0.07]" style={{ background: '#ff3b5c', width: `${30 + Math.random() * 60}%` }} />
+                    <span className="relative" style={{ color: '#ff3b5c' }}>{fp(askP, cfg.d)}</span>
+                    <span className="relative text-right" style={{ color: '#8585a0' }}>{amt}</span>
+                    <span className="relative text-right" style={{ color: '#8585a0' }}>{(parseFloat(amt) * (i + 1)).toFixed(cfg.d)}</span>
+                  </div>
+                );
+              })}
+              {/* Spread */}
+              <div className="text-center py-1 border-y text-[10px]" style={{ borderColor: '#282840', background: '#1a1a28', color: '#505068' }}>
+                Spread <span className="tabular-nums" style={{ color: '#8585a0' }}>{fp(cfg.sp, cfg.d)}</span>
+              </div>
+              {/* Bids (buys) */}
+              {Array.from({ length: 8 }).map((_, i) => {
+                const base = pd?.cp || cfg.p;
+                const bidP = base - cfg.sp / 2 - (i + 1) * cfg.sp * (0.5 + Math.random() * 2);
+                const amt = (Math.random() * 1.5 + 0.05).toFixed(cfg.d);
+                return (
+                  <div key={`b${i}`} className="grid grid-cols-3 px-3 py-0.5 text-[10px] relative cursor-pointer transition-colors duration-75 hover:bg-[#1a1a28]"
+                    style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                    <div className="absolute right-0 top-0 bottom-0 opacity-[0.07]" style={{ background: '#00e87b', width: `${30 + Math.random() * 60}%` }} />
+                    <span className="relative" style={{ color: '#00e87b' }}>{fp(bidP, cfg.d)}</span>
+                    <span className="relative text-right" style={{ color: '#8585a0' }}>{amt}</span>
+                    <span className="relative text-right" style={{ color: '#8585a0' }}>{(parseFloat(amt) * (i + 1)).toFixed(cfg.d)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* ── Bottom panel ────────────────────────────────────── */}
+      <div className="h-52 border-t flex flex-col shrink-0" style={{ borderColor: '#282840', background: '#0d0d14' }}>
+        <div className="flex border-b shrink-0" style={{ borderColor: '#282840' }}>
+          {(['positions', 'leaderboard', 'history'] as const).map(tab => (
+            <button key={tab} onClick={() => setBottomTab(tab)}
+              className="px-4 py-2 text-[11px] font-medium border-none cursor-pointer transition-colors duration-150"
+              style={{ color: bottomTab === tab ? '#ededf4' : '#505068', background: 'transparent', borderBottom: bottomTab === tab ? '2px solid #c8f542' : '2px solid transparent' }}>
+              {tab === 'positions' ? `Positions (${positions.length})` : tab === 'leaderboard' ? 'Leaderboard' : 'Trade History'}
+            </button>
+          ))}
         </div>
-      </footer>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          {/* Positions tab */}
+          {bottomTab === 'positions' && (
+            positions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-1.5" style={{ color: '#505068', fontSize: '12px' }}>
+                <span style={{ fontSize: '24px', opacity: 0.4 }}>&#x2197;</span>
+                <span>No open positions</span>
+              </div>
+            ) : (
+              <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+                <thead><tr>
+                  {['Pair', 'Side', 'Size', 'Entry', 'Mark', 'P&L ($)', ''].map(h => (
+                    <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-[10px] sticky top-0" style={{ color: '#505068', background: '#0d0d14', borderBottom: '1px solid #282840' }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {positions.map((p, i) => (
+                    <tr key={p.id} className="transition-colors duration-75" style={{ borderBottom: '1px solid #1e1e30' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#1a1a28')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <td className="px-3 py-2 font-semibold">{p.pair}</td>
+                      <td className="px-3 py-2">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: p.side === 'Long' ? '#00e87b' : '#ff3b5c', background: p.side === 'Long' ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)' }}>
+                          {p.side}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{p.size.toFixed(2)}</td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(p.entry, PAIRS[p.pair]?.d)}</td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(p.mark, PAIRS[p.pair]?.d)}</td>
+                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: p.pnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(p.pnl)}</td>
+                      <td className="px-3 py-2">
+                        <button onClick={() => closePosition(i)} className="px-2 py-0.5 rounded text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+                          style={{ background: '#13131d', border: '1px solid #282840', color: '#8585a0' }}>
+                          Close
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {/* Leaderboard tab */}
+          {bottomTab === 'leaderboard' && (
+            <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+              <thead><tr>
+                {['Rank', 'Trader', 'P&L', 'Win Rate', 'Trades'].map(h => (
+                  <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-[10px] sticky top-0" style={{ color: '#505068', background: '#0d0d14', borderBottom: '1px solid #282840' }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {leaderboard.map((c, i) => {
+                  const isMe = c.displayName === myName || c.username === myName;
+                  return (
+                    <tr key={c.id} className="transition-colors duration-75" style={{ borderBottom: '1px solid #1e1e30', background: isMe ? 'rgba(200,245,66,.05)' : 'transparent' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#1a1a28')}
+                      onMouseLeave={e => (e.currentTarget.style.background = isMe ? 'rgba(200,245,66,.05)' : 'transparent')}>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center justify-center h-5 w-5 rounded text-[10px] font-bold" style={{
+                          background: i === 0 ? 'linear-gradient(135deg,#ffd84d,#f5a623)' : i === 1 ? 'linear-gradient(135deg,#c0c0c0,#888)' : i === 2 ? 'linear-gradient(135deg,#cd7f32,#a0522d)' : '#1a1a28',
+                          color: i < 3 ? '#1a1a26' : '#505068',
+                        }}>{i + 1}</span>
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-xs">{c.displayName || c.username} {isMe && <span className="text-[9px] px-1 py-0 rounded font-bold ml-1" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>}</td>
+                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(c.totalPnl)}</td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.winRate >= 50 ? '#00e87b' : '#ff3b5c' }}>{c.winRate.toFixed(1)}%</td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{c.totalTrades}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* History tab */}
+          {bottomTab === 'history' && (
+            history.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-1.5" style={{ color: '#505068', fontSize: '12px' }}>
+                <span>No trade history yet</span>
+              </div>
+            ) : (
+              <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+                <thead><tr>
+                  {['Time', 'Pair', 'Side', 'Size', 'Entry', 'Exit', 'P&L'].map(h => (
+                    <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-[10px] sticky top-0" style={{ color: '#505068', background: '#0d0d14', borderBottom: '1px solid #282840' }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {history.map((h, i) => (
+                    <tr key={i} className="transition-colors duration-75" style={{ borderBottom: '1px solid #1e1e30' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#1a1a28')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{new Date(h.time).toLocaleTimeString()}</td>
+                      <td className="px-3 py-2 font-semibold">{h.pair}</td>
+                      <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: h.side === 'Long' ? '#00e87b' : '#ff3b5c', background: h.side === 'Long' ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)' }}>{h.side}</span></td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{h.size.toFixed(2)}</td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(h.entry, PAIRS[h.pair]?.d)}</td>
+                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(h.exit, PAIRS[h.pair]?.d)}</td>
+                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: h.pnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(h.pnl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+        </div>
+      </div>
+
+      {/* ── Toasts ───────────────────────────────────────────── */}
+      <div className="fixed top-14 right-3 z-[9999] flex flex-col gap-1.5">
+        <AnimatePresence>
+          {toasts.map(t => (
+            <motion.div key={t.id} initial={{ x: 120, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 120, opacity: 0 }}
+              className="px-4 py-2.5 rounded-lg text-xs flex items-center gap-2 max-w-xs"
+              style={{
+                background: t.type === 's' ? 'rgba(0,232,123,.1)' : t.type === 'e' ? 'rgba(255,59,92,.14)' : 'rgba(91,140,255,.1)',
+                border: `1px solid ${t.type === 's' ? 'rgba(0,232,123,.3)' : t.type === 'e' ? 'rgba(255,59,92,.3)' : 'rgba(91,140,255,.3)'}`,
+                color: t.type === 's' ? '#66ffb0' : t.type === 'e' ? '#ff8da0' : '#8db4ff',
+                backdropFilter: 'blur(12px)',
+              }}>
+              {t.msg}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

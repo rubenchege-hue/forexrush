@@ -1,0 +1,508 @@
+     1→<!DOCTYPE html>
+     2→<html lang="en">
+     3→<head>
+     4→<meta charset="UTF-8">
+     5→<meta name="viewport" content="width=device-width, initial-scale=1.0">
+     6→<title>Bullrush — Trading Arena</title>
+     7→<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+     8→<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+     9→<style>
+    10→:root{--bg0:#07070c;--bg1:#0d0d14;--bg2:#13131d;--bg3:#1a1a28;--bg4:#222234;--bdr:#282840;--bdr2:#1e1e30;--acc:#c8f542;--accD:rgba(200,245,66,.1);--grn:#00e87b;--grnD:rgba(0,232,123,.1);--red:#ff3b5c;--redD:rgba(255,59,92,.1);--t1:#ededf4;--t2:#8585a0;--t3:#505068;--blu:#5b8cff;--org:#f5a623;--ylw:#ffd84d}
+    11→*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    12→html,body{height:100%;overflow:hidden}
+    13→body{font-family:'Space Grotesk',sans-serif;background:var(--bg0);color:var(--t1);display:flex;flex-direction:column}
+    14→::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:4px}
+    15→input,select,button{font-family:inherit}
+    16→.hdr{height:48px;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid var(--bdr);background:var(--bg1);flex-shrink:0;z-index:50;gap:6px}
+    17→.logo{display:flex;align-items:center;gap:7px;text-decoration:none;margin-right:14px;flex-shrink:0}
+    18→.logo-i{width:28px;height:28px;background:var(--acc);border-radius:8px;display:flex;align-items:center;justify-content:center;transition:transform .2s}
+    19→.logo:hover .logo-i{transform:scale(1.08) rotate(-2deg)}
+    20→.logo-i i{font-size:12px;color:var(--bg0)}
+    21→.logo-t{font-size:16px;font-weight:700;letter-spacing:-.5px}
+    22→.nav-t{display:flex;gap:2px;margin-right:auto}
+    23→.nav-b{padding:6px 14px;border-radius:7px;font-size:12px;font-weight:500;color:var(--t2);cursor:pointer;border:none;background:none;transition:all .15s}
+    24→.nav-b:hover{color:var(--t1);background:var(--bg3)}
+    25→.nav-b.act{color:var(--t1);background:var(--bg3)}
+    26→.hsep{width:1px;height:24px;background:var(--bdr);margin:0 4px;flex-shrink:0}
+    27→.hbox{display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--bg2);border:1px solid var(--bdr);border-radius:7px}
+    28→.hbox .lb{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.7px}
+    29→.hbox .vl{font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace}
+    30→.hbox .vl.pos{color:var(--grn)}.hbox .vl.neg{color:var(--red)}
+    31→.hbtn{width:32px;height:32px;border-radius:7px;border:1px solid var(--bdr);background:var(--bg2);color:var(--t2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;font-size:13px;position:relative}
+    32→.hbtn:hover{border-color:#3a3a50;color:var(--t1);background:var(--bg3)}
+    33→.hbtn .bdg{position:absolute;top:-2px;right:-2px;width:14px;height:14px;background:var(--red);border-radius:50%;font-size:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+    34→.uav{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,var(--acc),#8bc34a);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--bg0);cursor:pointer}
+    35→.mc{display:grid;grid-template-columns:1fr 330px;flex:1;overflow:hidden}
+    36→.cs{display:flex;flex-direction:column;overflow:hidden;min-width:0}
+    37→.sb{display:flex;flex-direction:column;border-left:1px solid var(--bdr);overflow:hidden;background:var(--bg1)}
+    38→/* PnL Card */
+    39→.pnlc{padding:10px 14px;background:linear-gradient(135deg,rgba(200,245,66,.03),rgba(0,232,123,.02));border-bottom:1px solid var(--bdr)}
+    40→.pnlc-r{display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11px}
+    41→.pnlc-r .k{color:var(--t3)}.pnlc-r .v{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px}
+    42→.pnlc-r .v.pos{color:var(--grn)}.pnlc-r .v.neg{color:var(--red)}
+    43→.pnlc-big{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;text-align:center;padding:6px 0 2px}
+    44→.pnlc-big.pos{color:var(--grn)}.pnlc-big.neg{color:var(--red)}
+    45→/* Pair DD */
+    46→.pdd{position:relative;z-index:40}
+    47→.ps{display:flex;align-items:center;gap:7px;padding:4px 10px;background:var(--bg2);border:1px solid var(--bdr);border-radius:7px;cursor:pointer;transition:all .15s;user-select:none}
+    48→.ps:hover{border-color:#3a3a50}.ps.open{border-color:var(--acc);box-shadow:0 0 0 2px var(--accD)}
+    49→.ps .nm{font-size:13px;font-weight:600}.ps .pr{font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--t2)}
+    50→.ps .ch{font-size:10px;font-weight:600;padding:2px 5px;border-radius:3px}
+    51→.ps .ch.up{color:var(--grn);background:var(--grnD)}.ps .ch.dn{color:var(--red);background:var(--redD)}
+    52→.ps .chev{font-size:9px;color:var(--t3);transition:transform .15s}.ps.open .chev{transform:rotate(180deg)}
+    53→.dp{position:absolute;top:calc(100% + 4px);left:0;width:400px;background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.6);display:none;overflow:hidden}
+    54→.dp.show{display:block;animation:dpIn .15s ease}
+    55→@keyframes dpIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+    56→.dp-s{padding:8px 10px;border-bottom:1px solid var(--bdr);position:relative}
+    57→.dp-s input{width:100%;padding:7px 8px 7px 28px;background:var(--bg3);border:1px solid var(--bdr);border-radius:7px;color:var(--t1);font-size:12px;outline:none;transition:border-color .15s}
+    58→.dp-s input:focus{border-color:var(--acc)}
+    59→.dp-s i{position:absolute;left:18px;top:50%;transform:translateY(-50%);color:var(--t3);font-size:11px}
+    60→.dp-gl{padding:6px 12px 3px;font-size:9px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:1px}
+    61→.dp-it{max-height:300px;overflow-y:auto}
+    62→.dp-r{display:grid;grid-template-columns:80px 1fr 72px 62px;align-items:center;padding:6px 12px;cursor:pointer;transition:background .1s;gap:4px}
+    63→.dp-r:hover{background:var(--bg3)}.dp-r.act{background:var(--accD)}
+    64→.dp-r .s{font-size:12px;font-weight:600}.dp-r .f{font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    65→.dp-r .p{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--t2);text-align:right}
+    66→.dp-r .c{font-size:10px;font-weight:600;text-align:right;padding:2px 4px;border-radius:3px}
+    67→.dp-r .c.up{color:var(--grn);background:var(--grnD)}.dp-r .c.dn{color:var(--red);background:var(--redD)}
+    68→/* Toolbar */
+    69→.ct{display:flex;align-items:center;gap:5px;padding:6px 10px;border-bottom:1px solid var(--bdr);flex-shrink:0;flex-wrap:wrap}
+    70→.tsep{width:1px;height:22px;background:var(--bdr);margin:0 3px}
+    71→.tfg{display:flex;gap:1px}
+    72→.tfb{padding:3px 8px;border-radius:5px;font-size:11px;font-weight:500;color:var(--t3);cursor:pointer;border:none;background:none;transition:all .15s}
+    73→.tfb:hover{color:var(--t2);background:var(--bg3)}.tfb.act{color:var(--t1);background:var(--bg3)}
+    74→.ig{display:flex;gap:1px}
+    75→.ib{padding:3px 7px;border-radius:5px;font-size:10px;font-weight:500;color:var(--t3);cursor:pointer;border:1px solid transparent;background:none;transition:all .15s}
+    76→.ib:hover{color:var(--t2)}.ib.act{color:var(--acc);border-color:var(--accD);background:var(--accD)}
+    77→.ctools{margin-left:auto;display:flex;gap:3px}
+    78→.tb{width:26px;height:26px;border-radius:5px;border:1px solid var(--bdr);background:var(--bg2);color:var(--t3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:all .15s}
+    79→.tb:hover{border-color:#3a3a50;color:var(--t2);background:var(--bg3)}
+    80→.obar{display:flex;gap:14px;padding:5px 12px;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--t3);border-bottom:1px solid var(--bdr2);flex-shrink:0;min-height:24px;align-items:center}
+    81→.obar span{white-space:nowrap}.obar .v{color:var(--t2)}
+    82→.ccw{flex:1;position:relative;min-height:0;background:var(--bg0)}.ccw canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+    83→/* Bottom */
+    84→.bp{height:230px;border-top:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;background:var(--bg1)}
+    85→.bt{display:flex;gap:0;border-bottom:1px solid var(--bdr);flex-shrink:0}
+    86→.btb{padding:8px 16px;font-size:11px;font-weight:500;color:var(--t3);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:all .15s}
+    87→.btb:hover{color:var(--t2)}.btb.act{color:var(--t1);border-bottom-color:var(--acc)}
+    88→.btb .ct{font-size:9px;background:var(--bg3);padding:1px 5px;border-radius:8px;margin-left:5px;color:var(--t3)}
+    89→.bc{flex:1;overflow-y:auto;overflow-x:hidden}
+    90→.tp{display:none;height:100%}.tp.act{display:block}
+    91→/* Tables */
+    92→.pt,.lt,.ht{width:100%;border-collapse:collapse;font-size:11px}
+    93→.pt thead,.lt thead,.ht thead{position:sticky;top:0;z-index:2}
+    94→.pt th,.lt th,.ht th{padding:8px 12px;text-align:left;font-weight:500;color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.7px;background:var(--bg1);border-bottom:1px solid var(--bdr)}
+    95→.pt td,.ht td{padding:8px 12px;border-bottom:1px solid var(--bdr2);font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap}
+    96→.lt td{padding:8px 12px;border-bottom:1px solid var(--bdr2);white-space:nowrap}
+    97→.pt tbody tr,.lt tbody tr,.ht tbody tr{transition:background .1s}
+    98→.pt tbody tr:hover,.lt tbody tr:hover,.ht tbody tr:hover{background:var(--bg3)}
+    99→.sb2{padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600}
+   100→.sb2.l{color:var(--grn);background:var(--grnD)}.sb2.s{color:var(--red);background:var(--redD)}
+   101→.pp{color:var(--grn)}.pn{color:var(--red)}
+   102→.cb{padding:3px 8px;border-radius:4px;border:1px solid var(--bdr);background:var(--bg2);color:var(--t2);font-size:10px;cursor:pointer;transition:all .15s;font-family:inherit}
+   103→.cb:hover{border-color:var(--red);color:var(--red);background:var(--redD)}
+   104→.rc{display:flex;align-items:center;gap:6px}
+   105→.rn{width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:var(--bg3);color:var(--t3)}
+   106→.rn.g{background:linear-gradient(135deg,#ffd84d,#f5a623);color:#1a1a26}
+   107→.rn.sv{background:linear-gradient(135deg,#c0c0c0,#888);color:#1a1a26}
+   108→.rn.br{background:linear-gradient(135deg,#cd7f32,#a0522d);color:#fff}
+   109→.la{width:26px;height:26px;border-radius:5px;object-fit:cover}
+   110→.ln{font-weight:600;font-size:12px}.lp{font-family:'JetBrains Mono',monospace;font-weight:600}
+   111→.wb{width:50px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:5px}
+   112→.wf{height:100%;border-radius:2px}
+   113→.stb{padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600}
+   114→.stb.w{color:var(--grn);background:var(--grnD)}.stb.lo{color:var(--red);background:var(--redD)}
+   115→.you-badge{font-size:9px;background:var(--acc);color:var(--bg0);padding:1px 5px;border-radius:3px;font-weight:700;margin-left:4px}
+   116→/* Trading Panel */
+   117→.tpn{padding:12px 14px;border-bottom:1px solid var(--bdr)}
+   118→.bst{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:12px;background:var(--bg3);border-radius:8px;padding:3px}
+   119→.bsb{padding:8px;border-radius:6px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;background:transparent;color:var(--t3)}
+   120→.bsb.ab{background:var(--grn);color:#0a0a0f;box-shadow:0 3px 12px rgba(0,232,123,.2)}
+   121→.bsb.as{background:var(--red);color:#fff;box-shadow:0 3px 12px rgba(255,59,92,.2)}
+   122→.bsb:not(.ab):not(.as):hover{color:var(--t2)}
+   123→.otr{display:flex;gap:3px;margin-bottom:10px;background:var(--bg3);border-radius:7px;padding:2px}
+   124→.otb{flex:1;padding:5px;border-radius:5px;border:none;font-size:11px;font-weight:500;color:var(--t3);cursor:pointer;background:transparent;transition:all .15s}
+   125→.otb.act{background:var(--bg4);color:var(--t1)}
+   126→.fd{margin-bottom:10px}
+   127→.fl{display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+   128→.fl .ht{color:var(--t2);text-transform:none;letter-spacing:0;font-family:'JetBrains Mono',monospace}
+   129→.fi{width:100%;padding:8px 10px;background:var(--bg3);border:1.5px solid var(--bdr);border-radius:7px;color:var(--t1);font-size:13px;font-family:'JetBrains Mono',monospace;outline:none;transition:all .15s}
+   130→.fi:focus{border-color:var(--acc);box-shadow:0 0 0 2px var(--accD)}
+   131→.fi::placeholder{color:var(--t3)}
+   132→.pbg{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:10px}
+   133→.pbb{padding:5px;border-radius:5px;border:1px solid var(--bdr);background:var(--bg3);color:var(--t2);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s}
+   134→.pbb:hover{border-color:var(--acc);color:var(--acc);background:var(--accD)}
+   135→.lvr{display:flex;gap:3px;margin-bottom:10px;flex-wrap:wrap}
+   136→.lvb{padding:5px 10px;border-radius:5px;border:1px solid var(--bdr);background:var(--bg3);color:var(--t2);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
+   137→.lvb:hover{border-color:var(--acc);color:var(--acc)}.lvb.act{border-color:var(--acc);color:var(--acc);background:var(--accD)}
+   138→.tsr{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+   139→.pob{width:100%;padding:11px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+   140→.pob.by{background:var(--grn);color:#0a0a0f}.pob.by:hover{box-shadow:0 4px 20px rgba(0,232,123,.25);transform:translateY(-1px)}
+   141→.pob.sl{background:var(--red);color:#fff}.pob.sl:hover{box-shadow:0 4px 20px rgba(255,59,92,.25);transform:translateY(-1px)}
+   142→.pob:active{transform:translateY(0)}.pob.ld{pointer-events:none;opacity:.8}
+   143→.pob .btx{transition:opacity .15s}.pob.ld .btx{opacity:0}
+   144→.bsp{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
+   145→.pob.ld .bsp{opacity:1}
+   146→.bsp::after{content:'';width:18px;height:18px;border:2px solid rgba(0,0,0,.15);border-top-color:currentColor;border-radius:50%;animation:sp .5s linear infinite}
+   147→@keyframes sp{to{transform:rotate(360deg)}}
+   148→.osm{margin-top:10px;padding:8px;background:var(--bg3);border-radius:7px;font-size:10px;color:var(--t3);display:grid;grid-template-columns:1fr 1fr;gap:4px}
+   149→.osm .rw{display:flex;justify-content:space-between}.osm .vl{color:var(--t2);font-family:'JetBrains Mono',monospace}
+   150→/* Order Book */
+   151→.obk{flex:1;display:flex;flex-direction:column;overflow:hidden}
+   152→.obh{padding:8px 12px;font-size:11px;font-weight:600;display:flex;justify-content:space-between;border-bottom:1px solid var(--bdr);flex-shrink:0}
+   153→.obc{display:grid;grid-template-columns:1fr 1fr 1fr;font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;padding:4px 12px;border-bottom:1px solid var(--bdr2);flex-shrink:0}
+   154→.obrs{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+   155→.oba,.obb{display:flex;flex-direction:column}
+   156→.obr{display:grid;grid-template-columns:1fr 1fr 1fr;padding:2px 12px;font-size:10px;font-family:'JetBrains Mono',monospace;position:relative;cursor:pointer;transition:background .08s}
+   157→.obr:hover{background:var(--bg3)}
+   158→.obr .dp{position:absolute;top:0;right:0;bottom:0;opacity:.07;pointer-events:none}
+   159→.obr.ask .dp{background:var(--red)}.obr.bid .dp{background:var(--grn)}
+   160→.obr.ask .prc{color:var(--red)}.obr.bid .prc{color:var(--grn)}
+   161→.obr .amt,.obr .tot{color:var(--t2);text-align:right}
+   162→.obsp{padding:4px 12px;text-align:center;font-size:10px;color:var(--t3);border-top:1px solid var(--bdr);border-bottom:1px solid var(--bdr);flex-shrink:0;background:var(--bg3)}
+   163→.obsp .sv{font-family:'JetBrains Mono',monospace;color:var(--t2);margin-left:5px}
+   164→/* Toast */
+   165→.tc{position:fixed;top:56px;right:12px;z-index:9999;display:flex;flex-direction:column;gap:6px}
+   166→.tst{padding:10px 16px;border-radius:8px;font-size:12px;display:flex;align-items:center;gap:7px;backdrop-filter:blur(12px);transform:translateX(120%);animation:ti .3s ease forwards;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:320px}
+   167→.tst.e{background:rgba(255,59,92,.14);border:1px solid rgba(255,59,92,.3);color:#ff8da0}
+   168→.tst.s{background:rgba(0,232,123,.1);border:1px solid rgba(0,232,123,.3);color:#66ffb0}
+   169→.tst.i{background:rgba(91,140,255,.1);border:1px solid rgba(91,140,255,.3);color:#8db4ff}
+   170→.tst.out{animation:to .25s ease forwards}
+   171→@keyframes ti{to{transform:translateX(0)}}@keyframes to{to{transform:translateX(120%);opacity:0}}
+   172→.ldot{width:5px;height:5px;border-radius:50%;background:var(--grn);display:inline-block;margin-right:5px;animation:lp 1.5s ease-in-out infinite}
+   173→@keyframes lp{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,232,123,.4)}50%{opacity:.6;box-shadow:0 0 0 5px rgba(0,232,123,0)}}
+   174→.es{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--t3);font-size:12px;gap:6px;padding:16px}.es i{font-size:24px;opacity:.4}
+   175→@media(max-width:1100px){.mc{grid-template-columns:1fr 290px}}
+   176→@media(max-width:900px){.mc{grid-template-columns:1fr;grid-template-rows:1fr auto}.sb{border-left:none;border-top:1px solid var(--bdr);max-height:360px}.nav-t{display:none}.bp{height:180px}.dp{width:320px}}
+   177→@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+   178→*:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+   179→</style>
+   180→</head>
+   181→<body>
+   182→
+   183→<header class="hdr">
+   184→  <a href="#" class="logo"><div class="logo-i"><i class="fa-solid fa-bolt"></i></div><span class="logo-t">Bullrush</span></a>
+   185→  <nav class="nav-t"><button class="nav-b act" data-nav="trading"><i class="fa-solid fa-chart-line" style="margin-right:5px;font-size:11px"></i>Trading</button><button class="nav-b" data-nav="lb"><i class="fa-solid fa-trophy" style="margin-right:5px;font-size:11px"></i>Leaderboard</button></nav>
+   186→  <div class="hsep"></div>
+   187→  <div class="hbox"><span class="lb">Balance</span><span class="vl" id="hBal">$10,000.00</span></div>
+   188→  <div class="hbox" id="hPnlBox"><span class="lb">P&L</span><span class="vl" id="hPnl">$0.00</span></div>
+   189→  <div class="hbox"><span class="lb">Equity</span><span class="vl" id="hEq">$10,000.00</span></div>
+   190→  <div class="hsep"></div>
+   191→  <button class="hbtn" aria-label="Notifications"><i class="fa-regular fa-bell"></i><span class="bdg">3</span></button>
+   192→  <button class="hbtn" aria-label="Settings"><i class="fa-solid fa-gear"></i></button>
+   193→  <div class="uav" title="Your account">JD</div>
+   194→</header>
+   195→
+   196→<div class="mc">
+   197→  <section class="cs">
+   198→    <div class="ct">
+   199→      <div class="pdd" id="pdd">
+   200→        <div class="ps" id="psBtn"><span class="nm" id="ddNm">EUR/USD</span><span class="pr" id="ddPr">1.08470</span><span class="ch up" id="ddCh">+0.12%</span><i class="fa-solid fa-chevron-down chev"></i></div>
+   201→        <div class="dp" id="dpP"><div class="dp-s"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="ddSi" placeholder="Search pairs..."></div><div class="dp-it" id="ddIt"></div></div>
+   202→      </div>
+   203→      <div class="tsep"></div>
+   204→      <div class="tfg" id="tfG"><button class="tfb" data-tf="1m">1m</button><button class="tfb" data-tf="5m">5m</button><button class="tfb act" data-tf="15m">15m</button><button class="tfb" data-tf="1h">1H</button><button class="tfb" data-tf="4h">4H</button><button class="tfb" data-tf="1d">1D</button></div>
+   205→      <div class="tsep"></div>
+   206→      <div class="ig" id="indG"><button class="ib act" data-ind="sma">SMA</button><button class="ib act" data-ind="vol">Vol</button><button class="ib" data-ind="bb">BB</button><button class="ib" data-ind="ema">EMA</button></div>
+   207→      <div class="ctools"><button class="tb" id="zIn" title="Zoom in"><i class="fa-solid fa-magnifying-glass-plus"></i></button><button class="tb" id="zOut" title="Zoom out"><i class="fa-solid fa-magnifying-glass-minus"></i></button><button class="tb" id="rst" title="Reset"><i class="fa-solid fa-arrows-rotate"></i></button></div>
+   208→    </div>
+   209→    <div class="obar"><span>O <span class="v" id="oO">—</span></span><span>H <span class="v" id="oH">—</span></span><span>L <span class="v" id="oL">—</span></span><span>C <span class="v" id="oC">—</span></span><span>Vol <span class="v" id="oV">—</span></span><span style="margin-left:auto"><span class="ldot"></span>LIVE</span></div>
+   210→    <div class="ccw" id="cW"><canvas id="cC"></canvas></div>
+   211→  </section>
+   212→
+   213→  <aside class="sb">
+   214→    <div class="pnlc" id="pnlCard">
+   215→      <div class="pnlc-big" id="pnlBig">$0.00</div>
+   216→      <div class="pnlc-r"><span class="k">Unrealized P&L</span><span class="v" id="pnlV">$0.00</span></div>
+   217→      <div class="pnlc-r"><span class="k">Open Positions</span><span class="v" id="pnlCnt">0</span></div>
+   218→      <div class="pnlc-r"><span class="k">Margin Used</span><span class="v" id="pnlMar">$0.00</span></div>
+   219→      <div class="pnlc-r"><span class="k">Available Margin</span><span class="v" id="pnlAvl">$10,000.00</span></div>
+   220→    </div>
+   221→    <div class="tpn">
+   222→      <div class="bst" id="bsT"><button class="bsb ab" data-s="buy">Buy / Long</button><button class="bsb" data-s="sell">Sell / Short</button></div>
+   223→      <div class="otr" id="otR"><button class="otb act" data-ot="market">Market</button><button class="otb" data-ot="limit">Limit</button><button class="otb" data-ot="stop">Stop</button></div>
+   224→      <div class="fd" id="lpF" style="display:none"><div class="fl"><span>Price</span></div><input type="number" class="fi" id="lpI" placeholder="0.00" step="0.00001"></div>
+   225→      <div class="fd"><div class="fl"><span id="amtLbl">Size (Lots)</span><span class="ht" id="usdV">$0.00</span></div><input type="number" class="fi" id="amtI" placeholder="0.00" step="0.01"></div>
+   226→      <div class="pbg" id="pcB"><button class="pbb" data-pc="25">25%</button><button class="pbb" data-pc="50">50%</button><button class="pbb" data-pc="75">75%</button><button class="pbb" data-pc="100">100%</button></div>
+   227→      <div class="fl" style="margin-bottom:4px"><span>Leverage</span></div>
+   228→      <div class="lvr" id="lvR"><button class="lvb" data-lv="1">1x</button><button class="lvb" data-lv="2">2x</button><button class="lvb" data-lv="5">5x</button><button class="lvb act" data-lv="10">10x</button><button class="lvb" data-lv="25">25x</button><button class="lvb" data-lv="50">50x</button></div>
+   229→      <div class="tsr"><div class="fd" style="margin:0"><div class="fl"><span>TP</span></div><input type="number" class="fi" id="tpI" placeholder="—"></div><div class="fd" style="margin:0"><div class="fl"><span>SL</span></div><input type="number" class="fi" id="slI" placeholder="—"></div></div>
+   230→      <button class="pob by" id="poB"><span class="btx" id="poT">Buy / Long EUR/USD</span><div class="bsp"></div></button>
+   231→      <div class="osm"><div class="rw"><span>Value</span><span class="vl" id="smV">$0.00</span></div><div class="rw"><span>Margin</span><span class="vl" id="smM">$0.00</span></div><div class="rw"><span>Fee</span><span class="vl" id="smF">$0.00</span></div><div class="rw"><span>Liq. Price</span><span class="vl" id="smL">—</span></div></div>
+   232→    </div>
+   233→    <div class="obk">
+   234→      <div class="obh"><span>Order Book</span><span style="font-size:10px;color:var(--t3)" id="obP">EUR/USD</span></div>
+   235→      <div class="obc"><span>Price</span><span style="text-align:right">Amount</span><span style="text-align:right">Total</span></div>
+   236→      <div class="obrs"><div class="oba" id="obA"></div><div class="obsp" id="obS">Spread <span class="sv">—</span></div><div class="obb" id="obB"></div></div>
+   237→    </div>
+   238→  </aside>
+   239→</div>
+   240→
+   241→<div class="bp">
+   242→  <div class="bt"><button class="btb act" data-bt="pos">Positions <span class="ct" id="posCt">0</span></button><button class="btb" data-bt="lb">Leaderboard</button><button class="btb" data-bt="hist">Trade History</button></div>
+   243→  <div class="bc">
+   244→    <div class="tp act" data-pn="pos"><div class="es" id="posE"><i class="fa-regular fa-folder-open"></i><span>No open positions</span></div><table class="pt" id="posT" style="display:none"><thead><tr><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>PnL ($)</th><th>PnL (%)</th><th>Liq.</th><th></th></tr></thead><tbody id="posB"></tbody></table></div>
+   245→    <div class="tp" data-pn="lb"><table class="lt"><thead><tr><th>Rank</th><th>Trader</th><th>PnL</th><th>Win Rate</th><th>Trades</th><th>PF</th></tr></thead><tbody id="lbB"></tbody></table></div>
+   246→    <div class="tp" data-pn="hist"><table class="ht"><thead><tr><th>Time</th><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Exit</th><th>PnL</th><th></th></tr></thead><tbody id="hiB"></tbody></table></div>
+   247→  </div>
+   248→</div>
+   249→
+   250→<div class="tc" id="tC" aria-live="polite"></div>
+   251→
+   252→<script>
+   253→/* ==============================================
+   254→   PAIR CONFIG — ALL FOREX MAJORS + CROSSES + EXOTICS + CRYPTO
+   255→   ============================================== */
+   256→const P={
+   257→'EUR/USD':{g:'Forex Majors',f:'Euro / US Dollar',b:'EUR',q:'USD',p:1.08470,vol:.00025,pip:.0001,d:5,ls:100000,sp:.00012,ut:'lots',stp:.01},
+   258→'GBP/USD':{g:'Forex Majors',f:'British Pound / US Dollar',b:'GBP',q:'USD',p:1.27150,vol:.00030,pip:.0001,d:5,ls:100000,sp:.00015,ut:'lots',stp:.01},
+   259→'USD/JPY':{g:'Forex Majors',f:'US Dollar / Japanese Yen',b:'USD',q:'JPY',p:155.320,vol:.035,pip:.01,d:3,ls:100000,sp:.015,ut:'lots',stp:.01},
+   260→'USD/CHF':{g:'Forex Majors',f:'US Dollar / Swiss Franc',b:'USD',q:'CHF',p:0.88250,vol:.00022,pip:.0001,d:5,ls:100000,sp:.00012,ut:'lots',stp:.01},
+   261→'AUD/USD':{g:'Forex Majors',f:'Australian Dollar / US Dollar',b:'AUD',q:'USD',p:0.65480,vol:.00020,pip:.0001,d:5,ls:100000,sp:.00014,ut:'lots',stp:.01},
+   262→'NZD/USD':{g:'Forex Majors',f:'New Zealand Dollar / US Dollar',b:'NZD',q:'USD',p:0.60120,vol:.00018,pip:.0001,d:5,ls:100000,sp:.00016,ut:'lots',stp:.01},
+   263→'USD/CAD':{g:'Forex Majors',f:'US Dollar / Canadian Dollar',b:'USD',q:'CAD',p:1.37250,vol:.00025,pip:.0001,d:5,ls:100000,sp:.00015,ut:'lots',stp:.01},
+   264→'EUR/GBP':{g:'Forex Crosses',f:'Euro / British Pound',b:'EUR',q:'GBP',p:.85320,vol:.00018,pip:.0001,d:5,ls:100000,sp:.00018,ut:'lots',stp:.01},
+   265→'EUR/JPY':{g:'Forex Crosses',f:'Euro / Japanese Yen',b:'EUR',q:'JPY',p:168.450,vol:.040,pip:.01,d:3,ls:100000,sp:.020,ut:'lots',stp:.01},
+   266→'GBP/JPY':{g:'Forex Crosses',f:'British Pound / Japanese Yen',b:'GBP',q:'JPY',p:197.380,vol:.045,pip:.01,d:3,ls:100000,sp:.025,ut:'lots',stp:.01},
+   267→'EUR/CHF':{g:'Forex Crosses',f:'Euro / Swiss Franc',b:'EUR',q:'CHF',p:.95730,vol:.00020,pip:.0001,d:5,ls:100000,sp:.00020,ut:'lots',stp:.01},
+   268→'EUR/AUD':{g:'Forex Crosses',f:'Euro / Australian Dollar',b:'EUR',q:'AUD',p:1.65700,vol:.00030,pip:.0001,d:5,ls:100000,sp:.00025,ut:'lots',stp:.01},
+   269→'GBP/AUD':{g:'Forex Crosses',f:'British Pound / Australian Dollar',b:'GBP',q:'AUD',p:1.94200,vol:.00035,pip:.0001,d:5,ls:100000,sp:.00030,ut:'lots',stp:.01},
+   270→'AUD/JPY':{g:'Forex Crosses',f:'Australian Dollar / Japanese Yen',b:'AUD',q:'JPY',p:101.680,vol:.030,pip:.01,d:3,ls:100000,sp:.018,ut:'lots',stp:.01},
+   271→'CHF/JPY':{g:'Forex Crosses',f:'Swiss Franc / Japanese Yen',b:'CHF',q:'JPY',p:176.050,vol:.035,pip:.01,d:3,ls:100000,sp:.020,ut:'lots',stp:.01},
+   272→'EUR/TRY':{g:'Forex Exotics',f:'Euro / Turkish Lira',b:'EUR',q:'TRY',p:34.2500,vol:.012,pip:.01,d:4,ls:100000,sp:.030,ut:'lots',stp:.01},
+   273→'USD/TRY':{g:'Forex Exotics',f:'US Dollar / Turkish Lira',b:'USD',q:'TRY',p:31.5800,vol:.015,pip:.01,d:4,ls:100000,sp:.025,ut:'lots',stp:.01},
+   274→'USD/ZAR':{g:'Forex Exotics',f:'US Dollar / South African Rand',b:'USD',q:'ZAR',p:18.4200,vol:.008,pip:.001,d:4,ls:100000,sp:.015,ut:'lots',stp:.01},
+   275→'USD/MXN':{g:'Forex Exotics',f:'US Dollar / Mexican Peso',b:'USD',q:'MXN',p:17.1500,vol:.008,pip:.001,d:4,ls:100000,sp:.012,ut:'lots',stp:.01},
+   276→'BTC/USDT':{g:'Crypto',f:'Bitcoin / Tether',b:'BTC',q:'USDT',p:67432.18,vol:15,pip:.01,d:2,ls:1,sp:1.5,ut:'coins',stp:.001},
+   277→'ETH/USDT':{g:'Crypto',f:'Ethereum / Tether',b:'ETH',q:'USDT',p:3521.07,vol:2.5,pip:.01,d:2,ls:1,sp:.8,ut:'coins',stp:.01},
+   278→'SOL/USDT':{g:'Crypto',f:'Solana / Tether',b:'SOL',q:'USDT',p:172.44,vol:.8,pip:.01,d:2,ls:1,sp:.15,ut:'coins',stp:.1},
+   279→'XRP/USDT':{g:'Crypto',f:'Ripple / Tether',b:'XRP',q:'USDT',p:.5234,vol:.002,pip:.0001,d:4,ls:1,sp:.0008,ut:'coins',stp:10},
+   280→'DOGE/USDT':{g:'Crypto',f:'Dogecoin / Tether',b:'DOGE',q:'USDT',p:.1642,vol:.001,pip:.0001,d:4,ls:1,sp:.0005,ut:'coins',stp:100},
+   281→};
+   282→
+   283→/* ==============================================
+   284→   STATE
+   285→   ============================================== */
+   286→let aP='EUR/USD', bal=10000, pos=[], hist=[], pidC=0, vc=80, sO=0;
+   287→let xh={x:null,y:null}, sSMA=true, sVol=true, sBB=false, sEMA=false;
+   288→let isDrg=false, dsX=0, dsO=0, tSide='buy', oType='market', lev=10, cTf=15;
+   289→let pd={}; // pairData map
+   290→
+   291→/* ==============================================
+   292→   P&L CALCULATIONS — THE CORE FIX
+   293→   ============================================== */
+   294→function calcPnL(p) {
+   295→  const d=pd[p.pair]; if(!d) return 0;
+   296→  const c=P[p.pair], m=d.cp, dir=p.side==='Long'?1:-1;
+   297→  if(c.ut==='coins') return (m-p.entry)*p.size*dir;
+   298→  let pnl=(m-p.entry)*p.size*c.ls*dir;
+   299→  if(c.q==='JPY') pnl/=m; // JPY profit → USD
+   300→  return pnl;
+   301→}
+   302→
+   303→function calcMargin(p) {
+   304→  const c=P[p.pair];
+   305→  return c.ut==='coins' ? (p.size*p.entry)/p.lev : (p.size*c.ls*p.entry)/p.lev;
+   306→}
+   307→
+   308→function totalPnL() { return pos.reduce((s,p)=>s+calcPnL(p),0); }
+   309→function totalMargin() { return pos.reduce((s,p)=>s+calcMargin(p),0); }
+   310→function availMargin() { return bal-totalMargin(); }
+   311→
+   312→/* ==============================================
+   313→   DATA GENERATION
+   314→   ============================================== */
+   315→function genCandles(n,start,tf,vol) {
+   316→  const d=[]; let pr=start; const now=Date.now();
+   317→  for(let i=0;i<n;i++){
+   318→    const dr=(Math.random()-.48)*vol, o=pr, c=o+dr;
+   319→    const h=Math.max(o,c)+Math.random()*vol*.8, l=Math.min(o,c)-Math.random()*vol*.8;
+   320→    d.push({o,h,l,c,v:50+Math.random()*450,t:now-(n-i)*tf*60000});
+   321→    pr=c;
+   322→  }
+   323→  return d;
+   324→}
+   325→
+   326→function genOB(pr,sp,dec) {
+   327→  const bids=[],asks=[],hs=sp/2;
+   328→  for(let i=0;i<14;i++){
+   329→    const bp=pr-hs-(i+1)*(sp*(.5+Math.random()*2));
+   330→    const ap=pr+hs+(i+1)*(sp*(.5+Math.random()*2));
+   331→    const ba=+(Math.random()*1.5+.05).toFixed(dec);
+   332→    const aa=+(Math.random()*1.5+.05).toFixed(dec);
+   333→    bids.push({p:+bp.toFixed(dec),a:ba}); asks.push({p:+ap.toFixed(dec),a:aa});
+   334→  }
+   335→  let bt=0; bids.forEach(b=>{bt+=b.a;b.t=+bt.toFixed(dec);});
+   336→  let at=0; asks.forEach(a=>{at+=a.a;a.t=+at.toFixed(dec);});
+   337→  const mx=Math.max(bids[bids.length-1]?.t||.01,asks[asks.length-1]?.t||.01,.01);
+   338→  return {bids,asks,sp:+sp.toFixed(dec),mx};
+   339→}
+   340→
+   341→function initPD() {
+   342→  for(const[s,c] of Object.entries(P)){
+   343→    const cn=genCandles(300,c.p,15,c.vol);
+   344→    const cp=cn[cn.length-1].c;
+   345→    const ch=((cp-cn[0].o)/cn[0].o)*100;
+   346→    pd[s]={cn,cp,ob:genOB(cp,c.sp,c.d),ch,so:cn.length-vc};
+   347→  }
+   348→}
+   349→
+   350→/* ==============================================
+   351→   FETCH REAL PRICES
+   352→   ============================================== */
+   353→async function fetchPrices() {
+   354→  // Crypto from Binance (free, no key)
+   355→  try {
+   356→    const r=await fetch('https://api.binance.com/api/v3/ticker/24hr');
+   357→    const data=await r.json();
+   358→    const map={'BTCUSDT':'BTC/USDT','ETHUSDT':'ETH/USDT','SOLUSDT':'SOL/USDT','XRPUSDT':'XRP/USDT','DOGEUSDT':'DOGE/USDT'};
+   359→    data.forEach(t=>{
+   360→      const sym=map[t.symbol];
+   361→      if(sym&&P[sym]){
+   362→        const price=parseFloat(t.lastPrice);
+   363→        if(price>0){
+   364→          P[sym].p=price;
+   365→          P[sym].vol=price*.0003; // Scale volatility to price
+   366→        }
+   367→      }
+   368→    });
+   369→  } catch(e){ console.log('Crypto API unavailable'); }
+   370→
+   371→  // Forex from free API
+   372→  try {
+   373→    const r=await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+   374→    const data=await r.json();
+   375→    const r2=data.rates;
+   376→    if(r2.EUR) P['EUR/USD'].p=1/r2.EUR;
+   377→    if(r2.GBP) P['GBP/USD'].p=1/r2.GBP;
+   378→    if(r2.JPY) P['USD/JPY'].p=r2.JPY;
+   379→    if(r2.CHF) P['USD/CHF'].p=r2.CHF;
+   380→    if(r2.AUD) P['AUD/USD'].p=1/r2.AUD;
+   381→    if(r2.NZD) P['NZD/USD'].p=1/r2.NZD;
+   382→    if(r2.CAD) P['USD/CAD'].p=r2.CAD;
+   383→    if(r2.EUR&&r2.GBP) P['EUR/GBP'].p=r2.GBP/r2.EUR;
+   384→    if(r2.EUR&&r2.JPY) P['EUR/JPY'].p=r2.JPY/r2.EUR;
+   385→    if(r2.GBP&&r2.JPY) P['GBP/JPY'].p=r2.JPY/r2.GBP;
+   386→    if(r2.EUR&&r2.CHF) P['EUR/CHF'].p=r2.CHF/r2.EUR;
+   387→    if(r2.EUR&&r2.AUD) P['EUR/AUD'].p=r2.AUD/r2.EUR;
+   388→    if(r2.GBP&&r2.AUD) P['GBP/AUD'].p=r2.AUD/r2.GBP;
+   389→    if(r2.AUD&&r2.JPY) P['AUD/JPY'].p=r2.JPY/r2.AUD;
+   390→    if(r2.CHF&&r2.JPY) P['CHF/JPY'].p=r2.JPY/r2.CHF;
+   391→  } catch(e){ console.log('Forex API unavailable'); }
+   392→
+   393→  // Reinit with real prices
+   394→  initPD();
+   395→  sO=pd[aP].cn.length-vc;
+   396→  updateAll();
+   397→}
+   398→
+   399→/* ==============================================
+   400→   HELPERS
+   401→   ============================================== */
+   402→function gP(){return pd[aP];}
+   403→function gC(){return P[aP];}
+   404→function fp(p,dec){const d=dec!==undefined?dec:gC().d;if(d<=2&&Math.abs(p)>=1000)return p.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g,',');return p.toFixed(d);}
+   405→function ns(range,ticks){const r=range/ticks,m=Math.pow(10,Math.floor(Math.log10(r))),n=r/m;return Math.max((n<=1.5?1:n<=3.5?2:n<=7.5?5:10)*m,1e-12);}
+   406→
+   407→/* ==============================================
+   408→   CHART RENDERING
+   409→   ============================================== */
+   410→const cv=document.getElementById('cC'), cx=cv.getContext('2d'), cW=document.getElementById('cW');
+   411→let dp=1,cw=0,ch=0;
+   412→
+   413→function rszC(){
+   414→  const r=cW.getBoundingClientRect();dp=window.devicePixelRatio||1;cw=r.width;ch=r.height;
+   415→  cv.width=cw*dp;cv.height=ch*dp;cv.style.width=cw+'px';cv.style.height=ch+'px';
+   416→  cx.setTransform(dp,0,0,dp,0,0);draw();
+   417→}
+   418→
+   419→function cSMA(d,n){return d.map((_,i)=>{if(i<n-1)return null;let s=0;for(let j=i-n+1;j<=i;j++)s+=d[j].c;return s/n;});}
+   420→function cEMA(d,n){const r=[];const k=2/(n+1);let e=null;for(let i=0;i<d.length;i++){if(i<n-1){r.push(null);continue;}if(e===null){let s=0;for(let j=i-n+1;j<=i;j++)s+=d[j].c;e=s/n;}else e=d[i].c*k+e*(1-k);r.push(e);}return r;}
+   421→function cBB(d,n,m){const s=cSMA(d,n),u=[],l=[];for(let i=0;i<d.length;i++){if(s[i]===null){u.push(null);l.push(null);continue;}let sq=0;for(let j=i-n+1;j<=i;j++)sq+=Math.pow(d[j].c-s[i],2);const std=Math.sqrt(sq/n);u.push(s[i]+m*std);l.push(s[i]-m*std);}return{s,u,l};}
+   422→
+   423→function dLine(ctx,data,s,e,iX,pY,col,w){
+   424→  ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=w;let st=false;
+   425→  for(let i=s;i<e;i++){if(data[i]===null)continue;const x=iX(i-s),y=pY(data[i]);st?ctx.lineTo(x,y):(ctx.moveTo(x,y),st=true);}
+   426→  ctx.stroke();
+   427→}
+   428→function rR(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
+   429→
+   430→function draw(){
+   431→  const ctx=cx,d=gP(),c=gC(),cn=d.cn;
+   432→  ctx.clearRect(0,0,cw,ch);
+   433→  const paW=c.d<=2?78:88,taH=22,aW=cw-paW,aH=ch-taH;
+   434→  if(aW<=0||aH<=0)return;
+   435→  const vC=Math.min(vc,cn.length),sI=Math.max(0,Math.min(sO,cn.length-vC)),eI=Math.min(cn.length,sI+vC);
+   436→  const vis=cn.slice(sI,eI);if(!vis.length)return;
+   437→  const vH=sVol?aH*.18:0,cH=aH-vH;
+   438→  let mn=Infinity,mx=-Infinity,mxV=0;
+   439→  vis.forEach(c=>{mn=Math.min(mn,c.l);mx=Math.max(mx,c.h);mxV=Math.max(mxV,c.v);});
+   440→  if(sBB){const bb=cBB(cn,20,2);for(let i=sI;i<eI;i++){if(bb.u[i]!==null){mx=Math.max(mx,bb.u[i]);mn=Math.min(mn,bb.l[i]);}}}
+   441→  const pP=(mx-mn)*.08||c.vol;mn-=pP;mx+=pP;
+   442→  const pY=p=>cH-((p-mn)/(mx-mn))*cH;
+   443→  const cW2=Math.max(1,(aW/vC)*.7),gap=aW/vC,iX=i=>i*gap+gap*.5;
+   444→
+   445→  // Grid
+   446→  ctx.strokeStyle='rgba(40,40,64,.5)';ctx.lineWidth=.5;
+   447→  const ps=ns(mx-mn,6);let gp=Math.ceil(mn/ps)*ps;
+   448→  ctx.font='9px "JetBrains Mono"';ctx.textAlign='right';
+   449→  while(gp<mx){const y=pY(gp);if(y>0&&y<cH){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(aW,y);ctx.stroke();ctx.fillStyle='#404060';ctx.fillText(fp(gp),aW+paW-5,y+3);}gp+=ps;}
+   450→
+   451→  // Volume
+   452→  if(sVol) vis.forEach((c,i)=>{const x=iX(i),vh=(c.v/(mxV||1))*vH;ctx.fillStyle=c.c>=c.o?'rgba(0,232,123,.1)':'rgba(255,59,92,.1)';ctx.fillRect(x-cW2/2,cH+(vH-vh),cW2,vh);});
+   453→
+   454→  // BB
+   455→  if(sBB){const bb=cBB(cn,20,2);ctx.beginPath();let st=false;for(let i=sI;i<eI;i++){if(bb.u[i]===null)continue;const x=iX(i-sI),y=pY(bb.u[i]);st?ctx.lineTo(x,y):(ctx.moveTo(x,y),st=true);}for(let i=eI-1;i>=sI;i--){if(bb.l[i]===null)continue;ctx.lineTo(iX(i-sI),pY(bb.l[i]));}ctx.closePath();ctx.fillStyle='rgba(91,140,255,.03)';ctx.fill();[bb.u,bb.l].forEach(a=>dLine(ctx,a,sI,eI,iX,pY,'rgba(91,140,255,.25)',1));}
+   456→
+   457→  // SMA/EMA
+   458→  if(sSMA){dLine(ctx,cSMA(cn,20),sI,eI,iX,pY,'#f5a623',1);dLine(ctx,cSMA(cn,50),sI,eI,iX,pY,'#6c8cff',1);}
+   459→  if(sEMA) dLine(ctx,cEMA(cn,21),sI,eI,iX,pY,'#e879f9',1);
+   460→
+   461→  // Candles
+   462→  vis.forEach((c,i)=>{const x=iX(i),gn=c.c>=c.o,col=gn?'#00e87b':'#ff3b5c';ctx.strokeStyle=col;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,pY(c.h));ctx.lineTo(x,pY(c.l));ctx.stroke();const bt=pY(Math.max(c.o,c.c)),bb=pY(Math.min(c.o,c.c));ctx.fillStyle=col;ctx.fillRect(x-cW2/2,bt,cW2,Math.max(1,bb-bt));});
+   463→
+   464→  // Price line
+   465→  const lc=vis[vis.length-1],lY=pY(d.cp),lg=lc.c>=lc.o;
+   466→  ctx.setLineDash([3,3]);ctx.strokeStyle=lg?'rgba(0,232,123,.5)':'rgba(255,59,92,.5)';ctx.lineWidth=1;
+   467→  ctx.beginPath();ctx.moveTo(0,lY);ctx.lineTo(aW,lY);ctx.stroke();ctx.setLineDash([]);
+   468→  ctx.fillStyle=lg?'#00e87b':'#ff3b5c';rR(ctx,aW,lY-9,paW,18,3);ctx.fill();
+   469→  ctx.fillStyle='#0a0a0f';ctx.font='bold 9px "JetBrains Mono"';ctx.textAlign='center';
+   470→  ctx.fillText(fp(d.cp),aW+paW/2,lY+3);
+   471→
+   472→  // Time axis
+   473→  ctx.fillStyle='#404060';ctx.font='9px "JetBrains Mono"';ctx.textAlign='center';
+   474→  const tS=Math.max(1,Math.floor(vC/8));
+   475→  for(let i=0;i<vC;i+=tS){const x=iX(i),dt=new Date(vis[i].t);ctx.fillText(`${dt.getHours().toString().padStart(2,'0')}:${dt.getMinutes().toString().padStart(2,'0')}`,x,aH+14);ctx.strokeStyle='rgba(40,40,64,.3)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cH);ctx.stroke();}
+   476→
+   477→  // Crosshair
+   478→  if(xh.x!==null&&xh.y!==null&&xh.x<aW&&xh.y<cH){
+   479→    ctx.setLineDash([3,3]);ctx.strokeStyle='rgba(200,245,66,.3)';ctx.lineWidth=.5;
+   480→    ctx.beginPath();ctx.moveTo(xh.x,0);ctx.lineTo(xh.x,cH);ctx.stroke();
+   481→    ctx.beginPath();ctx.moveTo(0,xh.y);ctx.lineTo(aW,xh.y);ctx.stroke();ctx.setLineDash([]);
+   482→    const hp=mn+(1-xh.y/cH)*(mx-mn);
+   483→    ctx.fillStyle='#c8f542';rR(ctx,aW,xh.y-9,paW,18,3);ctx.fill();
+   484→    ctx.fillStyle='#0a0a0f';ctx.font='bold 9px "JetBrains Mono"';ctx.textAlign='center';
+   485→    ctx.fillText(fp(hp),aW+paW/2,xh.y+3);
+   486→    const ci=Math.floor(xh.x/gap);
+   487→    if(ci>=0&&ci<vC){
+   488→      const dt=new Date(vis[ci].t),tl=`${dt.getHours().toString().padStart(2,'0')}:${dt.getMinutes().toString().padStart(2,'0')}:${dt.getSeconds().toString().padStart(2,'0')}`;
+   489→      ctx.fillStyle='rgba(200,245,66,.8)';const tw=cx.measureText(tl).width+10;
+   490→      rR(ctx,xh.x-tw/2,aH,tw,18,3);ctx.fill();ctx.fillStyle='#0a0a0f';ctx.fillText(tl,xh.x,aH+13);
+   491→      const c=vis[ci];
+   492→      document.getElementById('oO').textContent=fp(c.o);
+   493→      document.getElementById('oH').textContent=fp(c.h);
+   494→      document.getElementById('oL').textContent=fp(c.l);
+   495→      document.getElementById('oC').textContent=fp(c.c);
+   496→      document.getElementById('oC').style.color=c.c>=c.o?'var(--grn)':'var(--red)';
+   497→      document.getElementById('oV').textContent=c.v.toFixed(1);
+   498→    }
+   499→  }
+   500→  ctx.strokeStyle='#282840';ctx.lineWidth=1;ctx.strokeRect(.5,.5,aW-.5,aH-.5);
+   501→}
+   502→
+   503→/* ==============================================
+   504→   CHART INTERACTIONS
+   505→   ============================================== */
+   506→cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect();xh.x=e.clientX-r.left;xh.y=e.clientY-r.top;if(isDrg){const dx=e.clientX-dsX,cd=Math.round(dx/(cw/vc));sO=Math.max(0,Math.min(gP().cn.length-vc,dsO-cd));}draw();});
+   507→cv.addEventListener('mouseleave',()=>{xh.x=null;xh.y=null;if(!isDrg)draw();});
+   508→cv.addEventListener('mousedown
