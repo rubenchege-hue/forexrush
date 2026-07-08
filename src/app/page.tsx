@@ -97,6 +97,21 @@ export default function Home() {
           ]);
           setLeaderboard(lb);
           setRecentTrades(tr);
+
+          // Check for existing session
+          const saved = localStorage.getItem('fx_session');
+          if (saved) {
+            try {
+              const s = JSON.parse(saved);
+              const me = lb.find((e: LbEntry) => e.id === s.myId);
+              if (me) {
+                setMyId(s.myId);
+                setMyName(me.displayName || me.username);
+                setPhase('arena');
+                return;
+              }
+            } catch { localStorage.removeItem('fx_session'); }
+          }
         }
       } catch (e) { console.error(e); }
       setPhase('landing');
@@ -129,6 +144,7 @@ export default function Home() {
       if (d.success) {
         setMyId(d.competitor.id);
         setMyName(d.competitor.displayName || d.competitor.username);
+        localStorage.setItem('fx_session', JSON.stringify({ myId: d.competitor.id }));
         const lb = await fetch(`/api/leaderboard?competitionId=${comp.id}`).then(r2 => r2.json());
         setLeaderboard(lb);
         setPhase('arena');
@@ -283,13 +299,13 @@ export default function Home() {
   // ═══════════════════════════════════════════════════════════════
   //  TRADING ARENA (combined Bullrush + ForexRush)
   // ═══════════════════════════════════════════════════════════════
-  return <TradingArena leaderboard={leaderboard} myName={myName} myId={myId} compId={comp?.id || ''} />;
+  return <TradingArena leaderboard={leaderboard} myName={myName} myId={myId} compId={comp?.id || ''} onLogout={() => { localStorage.removeItem('fx_session'); setMyId(''); setMyName(''); setPhase('landing'); }} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
 //  TRADING ARENA COMPONENT
 // ═══════════════════════════════════════════════════════════════════
-function TradingArena({ leaderboard, myName, myId, compId }: { leaderboard: LbEntry[]; myName: string; myId: string; compId: string }) {
+function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderboard: LbEntry[]; myName: string; myId: string; compId: string; onLogout: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [activePair, setActivePair] = useState('EUR/USD');
@@ -615,6 +631,7 @@ function TradingArena({ leaderboard, myName, myId, compId }: { leaderboard: LbEn
         <div className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold cursor-pointer" style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
           {myName.slice(0, 2).toUpperCase()}
         </div>
+        <button onClick={onLogout} className="h-7 px-2.5 rounded-lg text-[10px] font-semibold cursor-pointer border-none ml-1" style={{ background: '#1a1a28', color: '#505068' }} title="Sign out">✕</button>
       </header>
 
       {/* ── Main grid: chart + sidebar ──────────────────────── */}
