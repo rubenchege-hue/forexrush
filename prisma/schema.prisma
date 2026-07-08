@@ -7,29 +7,32 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  avatar    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model LicenseCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  clientName  String
+  email       String
+  status      String   @default("active") // active, redeemed, expired
+  issuedAt    DateTime @default(now())
+  expiresAt   DateTime
+  redeemedAt  DateTime?
+  redeemedBy  String?  // competitor username
 
   competitors Competitor[]
 }
 
 model Competition {
-  id            String   @id @default(cuid())
-  title         String
-  description   String?
-  entryFee      Float    @default(10.0)
-  prizePool     Float
-  startDate     DateTime
-  endDate       DateTime
-  status        String   @default("upcoming") // upcoming, active, completed
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  entryFee        Float    @default(10.0)
+  prizePool       Float
+  startDate       DateTime
+  endDate         DateTime
+  status          String   @default("upcoming") // upcoming, active, completed
   maxParticipants Int
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   competitors Competitor[]
   trades      Trade[]
@@ -37,9 +40,10 @@ model Competition {
 
 model Competitor {
   id            String   @id @default(cuid())
-  userId        String?
+  licenseCodeId String?
   competitionId String
   username      String
+  displayName   String
   avatar        String?
   initialBalance Float   @default(10000.0)
   currentBalance Float   @default(10000.0)
@@ -51,8 +55,8 @@ model Competitor {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user        User?       @relation(fields: [userId], references: [id])
-  competition Competition @relation(fields: [competitionId], references: [id])
+  licenseCode LicenseCode?  @relation(fields: [licenseCodeId], references: [id])
+  competition Competition  @relation(fields: [competitionId], references: [id])
   trades      Trade[]
 
   @@unique([competitionId, username])
@@ -62,13 +66,13 @@ model Trade {
   id            String   @id @default(cuid())
   competitorId  String
   competitionId String
-  pair          String   // e.g. "EUR/USD", "GBP/JPY"
+  pair          String
   direction     String   // "long" or "short"
   lotSize       Float
   entryPrice    Float
   exitPrice     Float?
   pnl           Float    @default(0.0)
-  status        String   @default("open") // "open", "closed", "liquidated"
+  status        String   @default("open")
   openedAt      DateTime @default(now())
   closedAt      DateTime?
   createdAt     DateTime @default(now())

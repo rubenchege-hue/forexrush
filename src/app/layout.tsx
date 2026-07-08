@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -13,13 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "ForexRush — $10 Forex Trading Competitions",
-  description: "Compete in forex trading competitions with just $10. Get a $10,000 virtual balance, climb the leaderboard, and win real cash prizes.",
-  keywords: ["forex", "trading", "competition", "leaderboard", "prizes", "forex rush"],
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
+  title: "ForexRush — Exclusive Forex Trading Competition",
+  description: "Redeem your access code. Get $10,000 virtual balance. Compete for the top of the leaderboard. Win real cash prizes.",
+  keywords: ["forex", "trading", "competition", "leaderboard", "prizes"],
 };
 
 export default function RootLayout({
@@ -28,9 +30,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${geistSans.variable} ${geistMono.variable} ${jetbrainsMono.variable} antialiased bg-background text-foreground`}
       >
         {children}
         <Toaster />

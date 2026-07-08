@@ -4,17 +4,34 @@ import { db } from '@/lib/db';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { competitionId, username, avatar } = body;
+    const { competitionId, username, avatar, accessCode: code } = body;
 
-    if (!competitionId || !username) {
-      return NextResponse.json({ error: 'Competition ID and username are required' }, { status: 400 });
+    if (!competitionId || !username || !code) {
+      return NextResponse.json({ error: 'Competition, username, and access code are required' }, { status: 400 });
     }
 
+    // Validate the access code
+    const normalizedCode = code.trim().toUpperCase();
+    const accessCode = await db.accessCode.findUnique({
+      where: { code: normalizedCode },
+    });
+
+    if (!accessCode) {
+      return NextResponse.json({ error: 'Invalid access code' }, { status: 404 });
+    }
+
+    if (accessCode.redeemed) {
+      return NextResponse.json({ error: 'This code has already been used' }, { status: 409 });
+    }
+
+    if (new Date() > accessCode.expiresAt) {
+      return NextResponse.json({ error: 'This access code has expired' }, { status: 410 });
+    }
+
+    // Check competition
     const competition = await db.competition.findUnique({
       where: { id: competitionId },
-      include: {
-        _count: { select: { competitors: true } },
-      },
+      include: { _count: { select: { competitors: true } } },
     });
 
     if (!competition) {
@@ -25,10 +42,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Competition is not accepting enrollments' }, { status: 400 });
     }
 
-    if (competition._count.competitors >= competition.maxParticipants) {
-      return NextResponse.json({ error: 'Competition is full' }, { status: 400 });
-    }
-
     const existing = await db.competitor.findFirst({
       where: { competitionId, username },
     });
@@ -37,14 +50,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Username already taken in this competition' }, { status: 409 });
     }
 
-    const competitor = await db.competitor.create({
-      data: {
-        competitionId,
-        username,
-        avatar: avatar || null,
-        initialBalance: 10000.0,
-        currentBalance: 10000.0,
-      },
+    // Create competitor and mark code as redeemed in a transaction
+    const competitor = await db.$transaction(async (tx) => {
+      const comp = await tx.competitor.create({
+        data: {
+          competitionId,
+          username,
+          avatar: avatar || null,
+          accessCodeId: accessCode.id,
+          initialBalance: 10000.0,
+          currentBalance: 10000.0,
+        },
+      });
+
+      await tx.accessCode.update({
+        where: { id: accessCode.id },
+        data: {
+          redeemed: true,
+          redeemedBy: username,
+          redeemedAt: new Date(),
+        },
+      });
+
+      return comp;
     });
 
     return NextResponse.json(competitor, { status: 201 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
@@ -8,99 +8,83 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
 import {
-  Trophy,
-  Users,
-  DollarSign,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  Zap,
-  Shield,
-  Target,
-  ChevronUp,
-  ChevronDown,
-  Activity,
-  BarChart3,
-  Flame,
-  Medal,
-  Crown,
-  Award,
-  ArrowRight,
-  Play,
-  Timer,
-  Loader2,
+  Trophy, Users, DollarSign, Clock, TrendingUp, TrendingDown,
+  Zap, Shield, Target, ChevronUp, ChevronDown, Activity,
+  BarChart3, Flame, Crown, Medal, Award, ArrowRight, Play,
+  Timer, Loader2, Key, Lock, CheckCircle2, XCircle, Eye,
+  EyeOff, Sparkles, AlertTriangle, Copy,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface Competition {
-  id: string;
-  title: string;
-  description: string;
-  entryFee: number;
-  prizePool: number;
-  startDate: string;
-  endDate: string;
-  status: string;
-  maxParticipants: number;
-  _count: { competitors: number };
+  id: string; title: string; description: string; entryFee: number;
+  prizePool: number; startDate: string; endDate: string; status: string;
+  maxParticipants: number; _count: { competitors: number };
 }
 
 interface Competitor {
-  id: string;
-  username: string;
-  avatar: string | null;
-  initialBalance: number;
-  currentBalance: number;
-  totalPnl: number;
-  totalTrades: number;
-  winRate: number;
-  rank: number;
-  roi: string;
+  id: string; username: string; displayName?: string; avatar: string | null;
+  initialBalance: number; currentBalance: number; totalPnl: number;
+  totalTrades: number; winRate: number; rank: number; roi: string;
 }
 
 interface Trade {
-  id: string;
-  pair: string;
-  direction: string;
-  lotSize: number;
-  entryPrice: number;
-  exitPrice: number | null;
-  pnl: number;
-  status: string;
-  openedAt: string;
-  closedAt: string | null;
-  competitor?: { username: string; avatar: string | null };
+  id: string; pair: string; direction: string; lotSize: number;
+  entryPrice: number; exitPrice: number | null; pnl: number;
+  status: string; openedAt: string; closedAt: string | null;
+  competitor?: { username: string; displayName?: string; avatar: string | null };
 }
+
+type AppState = 'loading' | 'landing' | 'enroll' | 'dashboard';
+
+// ── Forex pairs for ticker ────────────────────────────────────────────
+const TICKER_PAIRS = [
+  { pair: 'EUR/USD', price: 1.0876, change: 0.12 },
+  { pair: 'GBP/USD', price: 1.2734, change: -0.08 },
+  { pair: 'USD/JPY', price: 149.82, change: 0.34 },
+  { pair: 'AUD/USD', price: 0.6543, change: -0.21 },
+  { pair: 'USD/CAD', price: 1.3621, change: 0.05 },
+  { pair: 'NZD/USD', price: 0.6127, change: 0.18 },
+  { pair: 'EUR/GBP', price: 0.8542, change: -0.03 },
+  { pair: 'XAU/USD', price: 2342.50, change: 1.24 },
+  { pair: 'BTC/USD', price: 67842.00, change: 2.15 },
+  { pair: 'USD/CHF', price: 0.8834, change: -0.11 },
+];
 
 // ── Main Page ──────────────────────────────────────────────────────────
 export default function Home() {
+  const [appState, setAppState] = useState<AppState>('loading');
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [activeComp, setActiveComp] = useState<Competition | null>(null);
   const [leaderboard, setLeaderboard] = useState<Competitor[]>([]);
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [enrollOpen, setEnrollOpen] = useState(false);
-  const [enrollUsername, setEnrollUsername] = useState('');
-  const [enrolling, setEnrolling] = useState(false);
-  const [enrolled, setEnrolled] = useState(false);
-  const [showMyTrades, setShowMyTrades] = useState(false);
-  const [myCompetitorId, setMyCompetitorId] = useState<string | null>(null);
-  const [myTrades, setMyTrades] = useState<Trade[]>([]);
 
-  // Fetch data
+  // License form
+  const [licenseCode, setLicenseCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [showCode, setShowCode] = useState(false);
+  const [licenseError, setLicenseError] = useState('');
+  const [licenseVerifying, setLicenseVerifying] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
+  const [verifiedClient, setVerifiedClient] = useState<{ clientName: string; email: string } | null>(null);
+
+  // My session
+  const [myCompetitor, setMyCompetitor] = useState<Competitor | null>(null);
+
+  // Countdown
+  const [timeLeft, setTimeLeft] = useState('');
+
+  // ── Init: seed + fetch ───────────────────────────────────────────
   useEffect(() => {
-    async function fetchData() {
+    async function init() {
       try {
-        const [compRes, seedRes] = await Promise.all([
-          fetch('/api/competitions'),
-          fetch('/api/seed', { method: 'POST' }),
-        ]);
+        await fetch('/api/seed', { method: 'POST' });
+        const compRes = await fetch('/api/competitions');
         const comps = await compRes.json();
         setCompetitions(comps);
-
         const active = comps.find((c: Competition) => c.status === 'active') || comps[0];
         if (active) {
           setActiveComp(active);
@@ -111,254 +95,683 @@ export default function Home() {
           setLeaderboard(await lbRes.json());
           setRecentTrades(await tradesRes.json());
         }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { console.error(e); }
+      setAppState('landing');
     }
-    fetchData();
+    init();
   }, []);
 
-  // Countdown timer
-  const [timeLeft, setTimeLeft] = useState('');
+  // ── Countdown ────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeComp) return;
-    const timer = setInterval(() => {
-      const end = new Date(activeComp.endDate).getTime();
-      const now = Date.now();
-      const diff = Math.max(0, end - now);
+    const tick = () => {
+      const diff = Math.max(0, new Date(activeComp.endDate).getTime() - Date.now());
       const d = Math.floor(diff / 86400000);
       const h = Math.floor((diff % 86400000) / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
-      setTimeLeft(`${d}d ${h}h ${m}m ${s}s`);
-    }, 1000);
-    return () => clearInterval(timer);
+      setTimeLeft(`${String(d).padStart(2,'0')}:${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
   }, [activeComp]);
 
-  // Simulated live P&L updates
+  // ── Live P&L simulation ─────────────────────────────────────────
   useEffect(() => {
     const interval = setInterval(() => {
       setLeaderboard(prev =>
         prev.map(c => {
-          const fluctuation = (Math.random() - 0.45) * 30;
-          const newPnl = parseFloat((c.totalPnl + fluctuation).toFixed(2));
-          const newBalance = parseFloat((c.initialBalance + newPnl).toFixed(2));
-          return { ...c, totalPnl: newPnl, currentBalance: newBalance, roi: ((newPnl / c.initialBalance) * 100).toFixed(2) };
+          const f = (Math.random() - 0.45) * 30;
+          const np = parseFloat((c.totalPnl + f).toFixed(2));
+          return { ...c, totalPnl: np, currentBalance: parseFloat((c.initialBalance + np).toFixed(2)), roi: ((np / c.initialBalance) * 100).toFixed(2) };
         }).sort((a, b) => b.totalPnl - a.totalPnl).map((c, i) => ({ ...c, rank: i + 1 }))
       );
-    }, 5000);
+    }, 4000);
     return () => clearInterval(interval);
   }, []);
 
-  // Enroll handler
-  async function handleEnroll() {
-    if (!enrollUsername.trim() || !activeComp) return;
-    setEnrolling(true);
+  // ── Verify license code ─────────────────────────────────────────
+  const verifyLicense = useCallback(async () => {
+    if (!licenseCode.trim()) return;
+    setLicenseVerifying(true);
+    setLicenseError('');
     try {
-      const res = await fetch('/api/enroll', {
+      const res = await fetch(`/api/license?code=${encodeURIComponent(licenseCode.trim())}`);
+      const data = await res.json();
+      if (data.valid) {
+        setVerifiedClient({ clientName: data.clientName, email: data.email });
+        setAppState('enroll');
+      } else {
+        setLicenseError(data.error || 'Invalid code');
+      }
+    } catch { setLicenseError('Network error. Try again.'); }
+    setLicenseVerifying(false);
+  }, [licenseCode]);
+
+  // ── Redeem & Enroll ─────────────────────────────────────────────
+  const handleEnroll = useCallback(async () => {
+    if (!licenseCode.trim() || !username.trim() || !activeComp) return;
+    setRedeeming(true);
+    setLicenseError('');
+    try {
+      const res = await fetch('/api/license', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          code: licenseCode.trim(),
           competitionId: activeComp.id,
-          username: enrollUsername.trim(),
-          avatar: `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(enrollUsername.trim())}`,
+          username: username.trim(),
         }),
       });
-      if (res.ok) {
-        const comp = await res.json();
-        setMyCompetitorId(comp.id);
-        setEnrolled(true);
-        setEnrollOpen(false);
-        // Refresh leaderboard
+      const data = await res.json();
+      if (data.success) {
+        setMyCompetitor(data.competitor);
+        setAppState('dashboard');
         const lbRes = await fetch(`/api/leaderboard?competitionId=${activeComp.id}`);
         setLeaderboard(await lbRes.json());
+      } else {
+        setLicenseError(data.error || 'Enrollment failed');
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setEnrolling(false);
-    }
-  }
-
-  // Fetch my trades
-  useEffect(() => {
-    if (myCompetitorId) {
-      fetch(`/api/trades?competitorId=${myCompetitorId}`)
-        .then(r => r.json())
-        .then(setMyTrades);
-    }
-  }, [myCompetitorId]);
+    } catch { setLicenseError('Network error. Try again.'); }
+    setRedeeming(false);
+  }, [licenseCode, username, activeComp]);
 
   const topThree = leaderboard.slice(0, 3);
-  const prizeBreakdown = activeComp
-    ? [
-        { rank: 1, pct: 50, label: '1st Place', icon: Crown, color: 'text-yellow-500' },
-        { rank: 2, pct: 25, label: '2nd Place', icon: Medal, color: 'text-gray-400' },
-        { rank: 3, pct: 15, label: '3rd Place', icon: Award, color: 'text-amber-700' },
-        { rank: 4, pct: 10, label: '4th-10th Split', icon: BarChart3, color: 'text-muted-foreground' },
-      ]
-    : [];
 
-  if (loading) {
+  // ── Loading ─────────────────────────────────────────────────────
+  if (appState === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center animate-pulse-glow">
+            <TrendingUp className="h-6 w-6 text-white" />
+          </div>
+          <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+          <p className="text-sm text-muted-foreground font-mono">Loading markets...</p>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {/* ── Navbar ─────────────────────────────────────────────────── */}
-      <nav className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-lg">
-        <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-white" />
+  // ══════════════════════════════════════════════════════════════════
+  //  ENROLL / LICENSE FLOW
+  // ══════════════════════════════════════════════════════════════════
+  if (appState === 'enroll') {
+    return (
+      <div className="min-h-screen flex flex-col bg-background bg-grid bg-noise">
+        {/* Navbar */}
+        <nav className="sticky top-0 z-50 glass-strong border-b border-border/30">
+          <div className="mx-auto max-w-6xl flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
+                <TrendingUp className="h-4 w-4 text-white" />
+              </div>
+              <span className="text-lg font-bold tracking-tight">ForexRush</span>
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px] px-1.5 py-0">
+                BETA
+              </Badge>
             </div>
-            <span className="text-xl font-bold tracking-tight">ForexRush</span>
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => { setAppState('landing'); setVerifiedClient(null); setLicenseError(''); }}>
+              Back
+            </Button>
           </div>
-          <div className="flex items-center gap-3">
-            {activeComp && (
-              <Badge variant="outline" className="hidden sm:flex items-center gap-1 border-emerald-500/50 text-emerald-400">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+        </nav>
+
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.5 }}
+            className="w-full max-w-md"
+          >
+            <div className="glass rounded-2xl p-6 sm:p-8 glow-green">
+              {/* Verified badge */}
+              <div className="flex items-center gap-2 mb-6">
+                <div className="h-8 w-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-emerald-400">Access Code Verified</p>
+                  <p className="text-xs text-muted-foreground">{verifiedClient?.clientName} &middot; {verifiedClient?.email}</p>
+                </div>
+              </div>
+
+              <h2 className="text-2xl font-bold mb-1">Create Your Trader Profile</h2>
+              <p className="text-sm text-muted-foreground mb-6">Choose a name that will appear on the live leaderboard.</p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Access Code</label>
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 border border-border/40">
+                    <Lock className="h-4 w-4 text-emerald-500" />
+                    <span className="font-mono text-sm text-emerald-400 tracking-wider">{licenseCode}</span>
+                    <Badge variant="outline" className="ml-auto border-emerald-500/30 text-emerald-400 text-[10px]">VERIFIED</Badge>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Trader Name</label>
+                  <Input
+                    placeholder="e.g. PipMaster_99"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    maxLength={20}
+                    className="bg-muted/50 border-border/40 focus:border-emerald-500/50 h-11 font-mono placeholder:font-sans placeholder:text-muted-foreground/50"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1.5">This will be your identity on the leaderboard. No spaces.</p>
+                </div>
+
+                {licenseError && (
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                    <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                    <p className="text-sm text-destructive">{licenseError}</p>
+                  </div>
+                )}
+
+                <Button
+                  className="w-full h-12 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-base mt-2 glow-green transition-all duration-200"
+                  onClick={handleEnroll}
+                  disabled={redeeming || !username.trim()}
+                >
+                  {redeeming ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                  Enter Competition
+                </Button>
+              </div>
+
+              <div className="mt-6 pt-5 border-t border-border/30 grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-lg font-bold text-foreground">$10K</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Virtual Balance</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">7d</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Duration</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-emerald-400">50%</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">1st Prize</p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </main>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  DASHBOARD (after enrollment)
+  // ══════════════════════════════════════════════════════════════════
+  if (appState === 'dashboard' && myCompetitor) {
+    const myRank = leaderboard.find(c => c.id === myCompetitor.id)?.rank || leaderboard.length;
+    const myPnl = leaderboard.find(c => c.id === myCompetitor.id)?.totalPnl || 0;
+    const myRoi = leaderboard.find(c => c.id === myCompetitor.id)?.roi || '0.00';
+
+    return (
+      <div className="min-h-screen flex flex-col bg-background bg-grid bg-noise">
+        {/* Ticker tape */}
+        <div className="overflow-hidden border-b border-border/20 bg-surface">
+          <div className="flex animate-ticker whitespace-nowrap py-1.5 px-4">
+            {[...TICKER_PAIRS, ...TICKER_PAIRS].map((t, i) => (
+              <span key={i} className="inline-flex items-center gap-3 mx-6 text-xs">
+                <span className="text-muted-foreground font-medium">{t.pair}</span>
+                <span className="font-mono text-foreground tabular-nums">{t.price.toFixed(t.pair.includes('JPY') ? 2 : t.pair === 'XAU/USD' ? 2 : 4)}</span>
+                <span className={`font-mono tabular-nums ${t.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {t.change >= 0 ? '+' : ''}{t.change.toFixed(2)}%
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <nav className="sticky top-0 z-50 glass-strong border-b border-border/30">
+          <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
+                <TrendingUp className="h-4 w-4 text-white" />
+              </div>
+              <span className="text-lg font-bold tracking-tight">ForexRush</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="hidden sm:flex items-center gap-1.5 border-emerald-500/40 text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 LIVE
               </Badge>
-            )}
-            <Dialog open={enrollOpen} onOpenChange={setEnrollOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white font-semibold shadow-lg shadow-emerald-500/20">
-                  {enrolled ? '✓ Enrolled' : 'Join $10'}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Join the Competition</DialogTitle>
-                  <DialogDescription>Enter with just $10 and trade your way to the top of the leaderboard.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/10 to-green-500/10 border border-emerald-500/20 p-4 text-center">
-                    <p className="text-sm text-muted-foreground">Entry Fee</p>
-                    <p className="text-3xl font-bold text-emerald-400">$10</p>
-                    <p className="text-xs text-muted-foreground mt-1">Virtual trading balance: $10,000</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Choose your trader name</label>
-                    <Input
-                      placeholder="e.g. PipMaster_99"
-                      value={enrollUsername}
-                      onChange={e => setEnrollUsername(e.target.value)}
-                      maxLength={20}
-                    />
-                  </div>
-                  <Button
-                    className="w-full bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white font-semibold"
-                    onClick={handleEnroll}
-                    disabled={enrolling || !enrollUsername.trim()}
-                  >
-                    {enrolling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    {enrolled ? '✓ Already Enrolled' : 'Enter Competition'}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+              <div className="flex items-center gap-2">
+                <Avatar className="h-7 w-7">
+                  <AvatarImage src={myCompetitor.avatar || undefined} />
+                  <AvatarFallback className="bg-emerald-900 text-emerald-300 text-xs">{myCompetitor.username.slice(0,2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium hidden sm:inline">{myCompetitor.username}</span>
+              </div>
+            </div>
           </div>
+        </nav>
+
+        <main className="flex-1 mx-auto w-full max-w-7xl px-4 py-6 sm:py-8">
+          {/* My Stats Row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+            {[
+              { label: 'Rank', value: `#${myRank}`, sub: `of ${leaderboard.length}`, icon: Trophy, accent: false },
+              { label: 'Balance', value: `$${(myCompetitor.initialBalance + myPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: `${myPnl >= 0 ? '+' : ''}${myPnl.toFixed(2)} P&L`, icon: DollarSign, accent: myPnl >= 0 },
+              { label: 'ROI', value: `${parseFloat(myRoi) >= 0 ? '+' : ''}${myRoi}%`, sub: 'Return on investment', icon: BarChart3, accent: parseFloat(myRoi) >= 0 },
+              { label: 'Time Left', value: timeLeft, sub: activeComp?.title, icon: Timer, accent: false },
+            ].map((stat) => (
+              <motion.div key={stat.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className="glass border-border/30">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">{stat.label}</span>
+                      <stat.icon className={`h-4 w-4 ${stat.accent === false ? 'text-muted-foreground' : stat.accent ? 'text-emerald-400' : 'text-red-400'}`} />
+                    </div>
+                    <p className={`text-xl sm:text-2xl font-bold font-mono tabular-nums ${stat.accent === false ? '' : stat.accent ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {stat.value}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Leaderboard + Trades */}
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* Leaderboard */}
+            <div className="lg:col-span-2">
+              <Card className="glass border-border/30 overflow-hidden">
+                <CardHeader className="pb-3 border-b border-border/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-amber-400" />
+                      <CardTitle className="text-base">Leaderboard</CardTitle>
+                    </div>
+                    <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px]">
+                      {leaderboard.length} traders
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <div className="max-h-[560px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 glass-strong z-10">
+                      <tr className="border-b border-border/20">
+                        <th className="text-left py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider w-14">#</th>
+                        <th className="text-left py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Trader</th>
+                        <th className="text-right py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Win %</th>
+                        <th className="text-right py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">P&L</th>
+                        <th className="text-right py-2.5 px-4 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">ROI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <AnimatePresence>
+                        {leaderboard.map((c, i) => {
+                          const isMe = c.id === myCompetitor.id;
+                          return (
+                            <motion.tr
+                              key={c.id}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ duration: 0.2 }}
+                              className={`border-b border-border/15 transition-colors ${isMe ? 'bg-emerald-500/8' : 'hover:bg-muted/20'}`}
+                            >
+                              <td className="py-2.5 px-4">
+                                <span className={`inline-flex items-center justify-center h-6 w-6 rounded-md text-[11px] font-bold font-mono ${
+                                  i === 0 ? 'bg-amber-500/15 text-amber-400' :
+                                  i === 1 ? 'bg-gray-400/15 text-gray-300' :
+                                  i === 2 ? 'bg-orange-500/15 text-orange-400' :
+                                  isMe ? 'bg-emerald-500/15 text-emerald-400' :
+                                  'bg-muted/30 text-muted-foreground'
+                                }`}>
+                                  {c.rank}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar className="h-7 w-7">
+                                    <AvatarImage src={c.avatar || undefined} />
+                                    <AvatarFallback className="bg-muted text-[10px]">{c.username.slice(0,2).toUpperCase()}</AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <span className="font-medium text-sm">{c.displayName || c.username}</span>
+                                    {isMe && <span className="ml-1.5 text-[10px] text-emerald-400 font-medium">YOU</span>}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-4 text-right hidden sm:table-cell">
+                                <span className={`font-mono text-xs tabular-nums ${c.winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {c.winRate.toFixed(1)}%
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-right">
+                                <span className={`inline-flex items-center gap-0.5 font-mono text-sm font-semibold tabular-nums ${c.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {c.totalPnl >= 0 ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                  {Math.abs(c.totalPnl).toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-right">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-mono font-semibold tabular-nums ${
+                                  parseFloat(c.roi) >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                                }`}>
+                                  {parseFloat(c.roi) >= 0 ? '+' : ''}{c.roi}%
+                                </span>
+                              </td>
+                            </motion.tr>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+
+            {/* Recent Trades */}
+            <div className="space-y-4">
+              <Card className="glass border-border/30">
+                <CardHeader className="pb-3 border-b border-border/20">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-emerald-400" />
+                    <CardTitle className="text-base">Recent Trades</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-3">
+                  <div className="space-y-2 max-h-[460px] overflow-y-auto">
+                    {recentTrades.slice(0, 20).map((trade) => (
+                      <div key={trade.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 transition-colors">
+                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          trade.direction === 'long' ? 'bg-emerald-500/10' : 'bg-red-500/10'
+                        }`}>
+                          {trade.direction === 'long'
+                            ? <TrendingUp className="h-4 w-4 text-emerald-400" />
+                            : <TrendingDown className="h-4 w-4 text-red-400" />
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold">{trade.pair}</span>
+                            <span className={`font-mono text-sm font-semibold tabular-nums ${trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <span className="text-[11px] text-muted-foreground truncate max-w-[100px]">
+                              {trade.competitor?.displayName || trade.competitor?.username}
+                            </span>
+                            <Badge variant="outline" className={`text-[9px] px-1 py-0 ${
+                              trade.direction === 'long' ? 'border-emerald-500/30 text-emerald-400' : 'border-red-500/30 text-red-400'
+                            }`}>
+                              {trade.direction.toUpperCase()}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Prize Pool Mini */}
+              {activeComp && (
+                <Card className="glass border-border/30 glow-green">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Prize Pool</p>
+                    <p className="text-3xl font-extrabold text-gradient-green font-mono tabular-nums">
+                      ${(activeComp._count.competitors * 10).toLocaleString()}
+                    </p>
+                    <div className="flex justify-center gap-4 mt-3 text-xs">
+                      <div><span className="text-amber-400 font-bold">1st</span> <span className="text-muted-foreground">50%</span></div>
+                      <div><span className="text-gray-300 font-bold">2nd</span> <span className="text-muted-foreground">25%</span></div>
+                      <div><span className="text-orange-400 font-bold">3rd</span> <span className="text-muted-foreground">15%</span></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        </main>
+
+        <footer className="border-t border-border/20 mt-auto">
+          <div className="mx-auto max-w-7xl px-4 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-5 w-5 rounded-md bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
+                <TrendingUp className="h-2.5 w-2.5 text-white" />
+              </div>
+              <span className="text-xs text-muted-foreground">ForexRush &copy; {new Date().getFullYear()}</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Simulated trading &middot; Not financial advice</p>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  LANDING PAGE
+  // ══════════════════════════════════════════════════════════════════
+  return (
+    <div className="min-h-screen flex flex-col bg-background bg-grid bg-noise">
+      {/* ── Ticker Tape ──────────────────────────────────────────── */}
+      <div className="overflow-hidden border-b border-border/20 bg-surface">
+        <div className="flex animate-ticker whitespace-nowrap py-1.5 px-4">
+          {[...TICKER_PAIRS, ...TICKER_PAIRS].map((t, i) => (
+            <span key={i} className="inline-flex items-center gap-3 mx-6 text-xs">
+              <span className="text-muted-foreground font-medium">{t.pair}</span>
+              <span className="font-mono text-foreground tabular-nums">{t.price.toFixed(t.pair.includes('JPY') ? 2 : t.pair === 'XAU/USD' ? 2 : 4)}</span>
+              <span className={`font-mono tabular-nums ${t.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {t.change >= 0 ? '+' : ''}{t.change.toFixed(2)}%
+              </span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Navbar ───────────────────────────────────────────────── */}
+      <nav className="sticky top-0 z-50 glass-strong border-b border-border/30">
+        <div className="mx-auto max-w-6xl flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-white" />
+            </div>
+            <span className="text-lg font-bold tracking-tight">ForexRush</span>
+            <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-[10px] px-1.5 py-0 hidden sm:inline-flex">
+              LIVE
+            </Badge>
+          </div>
+          <Button
+            className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-semibold text-sm glow-green transition-all duration-200"
+            onClick={() => { setAppState('loading'); setTimeout(() => setAppState('landing'), 50); }}
+          >
+            <Key className="h-3.5 w-3.5 mr-1.5" />
+            Redeem Code
+          </Button>
         </div>
       </nav>
 
       <main className="flex-1">
-        {/* ── Hero Section ─────────────────────────────────────────── */}
+        {/* ── Hero ───────────────────────────────────────────────── */}
         <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/40 via-background to-green-950/30" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent" />
-          <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 text-center">
+          {/* Ambient glow */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
+          <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-emerald-600/3 rounded-full blur-[100px] pointer-events-none" />
+
+          <div className="relative mx-auto max-w-6xl px-4 pt-16 sm:pt-24 pb-16 sm:pb-20 text-center">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-              <Badge variant="outline" className="mb-6 border-emerald-500/40 text-emerald-400 px-4 py-1.5 text-sm">
-                <Flame className="h-3.5 w-3.5 mr-1.5" />
-                {activeComp ? `${activeComp._count.competitors} traders competing now` : 'Competitions Open'}
+              <Badge variant="outline" className="mb-6 border-emerald-500/30 text-emerald-400 px-4 py-1.5 text-xs">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse mr-1.5" />
+                {activeComp ? `${activeComp._count.competitors} traders competing` : 'Competition Active'}
               </Badge>
-              <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight">
-                Trade. Compete.
-                <span className="block bg-gradient-to-r from-emerald-400 via-green-400 to-lime-400 bg-clip-text text-transparent">
-                  Win Big.
-                </span>
+
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1]">
+                Enter the Arena.
+                <br />
+                <span className="text-gradient-green">Trade to the Top.</span>
               </h1>
-              <p className="mx-auto mt-6 max-w-2xl text-lg sm:text-xl text-muted-foreground leading-relaxed">
-                Enter forex trading competitions with just <span className="text-foreground font-semibold">$10</span>.
-                Get a <span className="text-foreground font-semibold">$10,000</span> virtual balance, climb the leaderboard, and take home real cash prizes.
+
+              <p className="mx-auto mt-5 max-w-xl text-base sm:text-lg text-muted-foreground leading-relaxed">
+                Redeem your exclusive access code to join the competition.
+                Start with <span className="text-foreground font-semibold font-mono">$10,000</span> virtual balance.
+                Climb the leaderboard. Win real prizes.
               </p>
-              <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Button
-                  size="lg"
-                  className="bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white font-bold text-lg px-8 py-6 shadow-xl shadow-emerald-500/25"
-                  onClick={() => setEnrollOpen(true)}
+
+              {/* Stats row */}
+              {activeComp && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                  className="mt-10 grid grid-cols-3 gap-3 max-w-lg mx-auto"
                 >
-                  <Play className="h-5 w-5 mr-2" />
-                  Enter for $10
-                </Button>
-                <Button size="lg" variant="outline" className="text-lg px-8 py-6" asChild>
-                  <a href="#leaderboard">
-                    <Trophy className="h-5 w-5 mr-2" />
-                    View Leaderboard
-                  </a>
-                </Button>
-              </div>
+                  {[
+                    { icon: Users, label: 'Traders', value: activeComp._count.competitors.toString() },
+                    { icon: DollarSign, label: 'Prize Pool', value: `$${activeComp._count.competitors * 10}` },
+                    { icon: Timer, label: 'Ends In', value: timeLeft.split(':').slice(0, 2).join(':') },
+                  ].map((s) => (
+                    <div key={s.label} className="glass rounded-xl p-3">
+                      <s.icon className="h-4 w-4 mx-auto text-emerald-400 mb-1.5" />
+                      <p className="text-lg sm:text-xl font-bold font-mono tabular-nums">{s.value}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{s.label}</p>
+                    </div>
+                  ))}
+                </motion.div>
+              )}
             </motion.div>
 
-            {/* Stats bar */}
-            {activeComp && (
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.3 }}
-                className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto"
-              >
-                {[
-                  { icon: Users, label: 'Traders', value: activeComp._count.competitors.toString() },
-                  { icon: DollarSign, label: 'Prize Pool', value: `$${activeComp._count.competitors * 10}` },
-                  { icon: Timer, label: 'Time Left', value: timeLeft },
-                  { icon: Target, label: 'Entry Fee', value: '$10' },
-                ].map((stat) => (
-                  <div key={stat.label} className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-4">
-                    <stat.icon className="h-5 w-5 mx-auto text-emerald-400 mb-2" />
-                    <p className="text-xl sm:text-2xl font-bold">{stat.value}</p>
-                    <p className="text-xs text-muted-foreground">{stat.label}</p>
-                  </div>
-                ))}
-              </motion.div>
-            )}
+            {/* ── License Code Input ────────────────────────────── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+              className="mt-12 max-w-md mx-auto"
+            >
+              <div className="glass rounded-2xl p-6 glow-green">
+                <div className="flex items-center gap-2 mb-4">
+                  <Key className="h-5 w-5 text-emerald-400" />
+                  <h3 className="text-lg font-bold">Redeem Your Access Code</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">Enter the code from your invitation to join the competition.</p>
+
+                <div className="relative mb-3">
+                  <Input
+                    placeholder="COMP-XXXX-XXXX"
+                    value={licenseCode}
+                    onChange={e => { setLicenseCode(e.target.value.toUpperCase()); setLicenseError(''); }}
+                    className="h-12 bg-muted/50 border-border/40 focus:border-emerald-500/50 font-mono text-base tracking-widest text-center uppercase placeholder:tracking-normal placeholder:font-sans placeholder:text-sm"
+                    maxLength={14}
+                    onKeyDown={e => { if (e.key === 'Enter') verifyLicense(); }}
+                  />
+                  <button
+                    onClick={() => setShowCode(!showCode)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+
+                {licenseError && (
+                  <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-2 mb-3 text-sm text-red-400">
+                    <XCircle className="h-4 w-4 shrink-0" />
+                    {licenseError}
+                  </motion.div>
+                )}
+
+                <Button
+                  className="w-full h-11 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-sm glow-green transition-all duration-200"
+                  onClick={verifyLicense}
+                  disabled={licenseVerifying || licenseCode.trim().length < 14}
+                >
+                  {licenseVerifying ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
+                  Verify & Continue
+                </Button>
+
+                <p className="text-[11px] text-muted-foreground mt-3 text-center">
+                  15 exclusive access codes issued &middot; Each code is single-use &middot; Valid for 30 days
+                </p>
+              </div>
+            </motion.div>
           </div>
         </section>
 
-        {/* ── How It Works ─────────────────────────────────────────── */}
-        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold">How It Works</h2>
-            <p className="mt-3 text-muted-foreground text-lg">Four simple steps to start competing</p>
+        {/* ── Top 3 Podium ───────────────────────────────────────── */}
+        {topThree.length >= 3 && (
+          <section className="mx-auto max-w-6xl px-4 py-16">
+            <div className="text-center mb-10">
+              <h2 className="text-2xl sm:text-3xl font-bold">Top Performers</h2>
+              <p className="text-sm text-muted-foreground mt-2">Live leaderboard — updated in real-time</p>
+            </div>
+
+            <div className="flex items-end justify-center gap-3 sm:gap-5 max-w-2xl mx-auto">
+              {/* 2nd */}
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex flex-col items-center w-1/3">
+                <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-gray-400/50">
+                  <AvatarImage src={topThree[1].avatar || undefined} />
+                  <AvatarFallback className="bg-gray-700/50 text-gray-300 text-xs">{topThree[1].username.slice(0,2)}</AvatarFallback>
+                </Avatar>
+                <p className="mt-2 text-xs sm:text-sm font-semibold truncate w-full text-center">{topThree[1].displayName || topThree[1].username}</p>
+                <p className={`text-xs sm:text-sm font-bold font-mono tabular-nums ${topThree[1].totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {topThree[1].totalPnl >= 0 ? '+' : ''}{topThree[1].totalPnl.toFixed(0)}
+                </p>
+                <div className="w-full mt-2 rounded-t-xl glass border-b-0 flex items-center justify-center py-3 sm:py-6">
+                  <Medal className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400" />
+                </div>
+              </motion.div>
+
+              {/* 1st */}
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="flex flex-col items-center w-1/3">
+                <Crown className="h-5 w-5 text-amber-400 mb-1" />
+                <Avatar className="h-14 w-14 sm:h-16 sm:w-16 border-2 border-amber-400/70 shadow-lg shadow-amber-400/10">
+                  <AvatarImage src={topThree[0].avatar || undefined} />
+                  <AvatarFallback className="bg-amber-900/50 text-amber-300 text-sm">{topThree[0].username.slice(0,2)}</AvatarFallback>
+                </Avatar>
+                <p className="mt-2 text-sm sm:text-base font-bold truncate w-full text-center">{topThree[0].displayName || topThree[0].username}</p>
+                <p className="text-sm sm:text-base font-bold text-emerald-400 font-mono tabular-nums">
+                  +{topThree[0].totalPnl.toFixed(0)}
+                </p>
+                <div className="w-full mt-2 rounded-t-xl glass border-b-0 flex items-center justify-center py-5 sm:py-10 glow-green-strong">
+                  <div className="text-center">
+                    <Crown className="h-6 w-6 sm:h-8 sm:w-8 text-amber-400 mx-auto" />
+                    <span className="text-xs text-amber-400 font-bold mt-1 block">#1</span>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* 3rd */}
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="flex flex-col items-center w-1/3">
+                <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-orange-400/50">
+                  <AvatarImage src={topThree[2].avatar || undefined} />
+                  <AvatarFallback className="bg-orange-900/50 text-orange-300 text-xs">{topThree[2].username.slice(0,2)}</AvatarFallback>
+                </Avatar>
+                <p className="mt-2 text-xs sm:text-sm font-semibold truncate w-full text-center">{topThree[2].displayName || topThree[2].username}</p>
+                <p className={`text-xs sm:text-sm font-bold font-mono tabular-nums ${topThree[2].totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {topThree[2].totalPnl >= 0 ? '+' : ''}{topThree[2].totalPnl.toFixed(0)}
+                </p>
+                <div className="w-full mt-2 rounded-t-xl glass border-b-0 flex items-center justify-center py-2 sm:py-4">
+                  <Award className="h-5 w-5 sm:h-6 sm:w-6 text-orange-400" />
+                </div>
+              </motion.div>
+            </div>
+          </section>
+        )}
+
+        {/* ── How It Works ───────────────────────────────────────── */}
+        <section className="mx-auto max-w-6xl px-4 py-16">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl font-bold">How It Works</h2>
+            <p className="text-sm text-muted-foreground mt-2">Three steps to start competing</p>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
             {[
-              { step: '01', icon: DollarSign, title: 'Pay $10 Entry', desc: 'Secure your spot in the competition with a low $10 entry fee. Accessible to everyone.' },
-              { step: '02', icon: BarChart3, title: 'Get $10K Virtual', desc: 'You receive a $10,000 virtual trading balance to trade forex pairs in real-time.' },
-              { step: '03', icon: Activity, title: 'Trade & Climb', desc: 'Execute trades, manage risk, and climb the live leaderboard with your P&L performance.' },
-              { step: '04', icon: Trophy, title: 'Win Prizes', desc: 'Top performers win real cash prizes from the prize pool. 1st place takes 50%!' },
-            ].map((item) => (
-              <motion.div
-                key={item.step}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5 }}
-              >
-                <Card className="h-full border-border/50 hover:border-emerald-500/30 transition-colors">
+              { step: '01', icon: Key, title: 'Redeem Code', desc: 'Enter your exclusive access code to unlock the competition. Single-use, 30-day validity.' },
+              { step: '02', icon: BarChart3, title: 'Trade & Compete', desc: 'Get $10,000 virtual balance. Execute trades and climb the live leaderboard.' },
+              { step: '03', icon: Trophy, title: 'Win Prizes', desc: 'Top performers take the prize pool. 1st place wins 50% — pure skill, no luck.' },
+            ].map((item, idx) => (
+              <motion.div key={item.step} initial={{ opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: idx * 0.1 }}>
+                <Card className="glass border-border/30 h-full hover:border-emerald-500/20 transition-colors duration-300">
                   <CardContent className="pt-6">
-                    <div className="text-4xl font-black text-emerald-500/20 mb-3">{item.step}</div>
-                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-3">
-                      <item.icon className="h-5 w-5 text-emerald-500" />
+                    <span className="text-3xl font-black text-emerald-500/15 font-mono">{item.step}</span>
+                    <div className="h-9 w-9 rounded-lg bg-emerald-500/10 flex items-center justify-center mt-2 mb-3">
+                      <item.icon className="h-4 w-4 text-emerald-400" />
                     </div>
-                    <h3 className="font-bold text-lg mb-2">{item.title}</h3>
+                    <h3 className="font-bold mb-1.5">{item.title}</h3>
                     <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
                   </CardContent>
                 </Card>
@@ -367,321 +780,67 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── Live Leaderboard ─────────────────────────────────────── */}
-        <section id="leaderboard" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 bg-gradient-to-b from-transparent to-emerald-950/10">
-          <div className="text-center mb-12">
-            <Badge variant="outline" className="mb-4 border-emerald-500/40 text-emerald-400">
-              <Activity className="h-3.5 w-3.5 mr-1.5" />
-              LIVE
-            </Badge>
-            <h2 className="text-3xl sm:text-4xl font-bold">Leaderboard</h2>
-            <p className="mt-3 text-muted-foreground text-lg">Real-time rankings — every pip counts</p>
-          </div>
-
-          {/* Top 3 Podium */}
-          {topThree.length >= 3 && (
-            <div className="flex items-end justify-center gap-3 sm:gap-6 mb-10 px-4 max-w-2xl mx-auto">
-              {/* 2nd Place */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="flex flex-col items-center w-1/3"
-              >
-                <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-gray-400">
-                  <AvatarImage src={topThree[1].avatar || undefined} />
-                  <AvatarFallback className="bg-gray-700 text-white text-sm">{topThree[1].username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <p className="mt-2 text-xs sm:text-sm font-semibold truncate w-full text-center">{topThree[1].username}</p>
-                <p className={`text-xs sm:text-sm font-bold ${topThree[1].totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {topThree[1].totalPnl >= 0 ? '+' : ''}{topThree[1].totalPnl.toFixed(2)}
-                </p>
-                <div className="w-full mt-2 rounded-t-lg bg-gradient-to-t from-gray-600/20 to-gray-400/10 border border-b-0 border-gray-500/30 flex items-center justify-center">
-                  <div className="py-4 sm:py-8">
-                    <Medal className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400 mx-auto" />
-                    <span className="text-xs text-gray-400 mt-1 block">#2</span>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 1st Place */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="flex flex-col items-center w-1/3"
-              >
-                <Crown className="h-5 w-5 text-yellow-400 mb-1" />
-                <Avatar className="h-14 w-14 sm:h-16 sm:w-16 border-2 border-yellow-400 shadow-lg shadow-yellow-400/20">
-                  <AvatarImage src={topThree[0].avatar || undefined} />
-                  <AvatarFallback className="bg-yellow-600 text-white text-sm">{topThree[0].username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <p className="mt-2 text-sm sm:text-base font-bold truncate w-full text-center">{topThree[0].username}</p>
-                <p className="text-sm sm:text-base font-bold text-emerald-400">
-                  +{topThree[0].totalPnl.toFixed(2)}
-                </p>
-                <div className="w-full mt-2 rounded-t-lg bg-gradient-to-t from-yellow-600/20 to-yellow-400/10 border border-b-0 border-yellow-500/30 flex items-center justify-center">
-                  <div className="py-6 sm:py-12">
-                    <Crown className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-400 mx-auto" />
-                    <span className="text-xs text-yellow-400 mt-1 block font-bold">#1</span>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 3rd Place */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-                className="flex flex-col items-center w-1/3"
-              >
-                <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-amber-700">
-                  <AvatarImage src={topThree[2].avatar || undefined} />
-                  <AvatarFallback className="bg-amber-800 text-white text-sm">{topThree[2].username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <p className="mt-2 text-xs sm:text-sm font-semibold truncate w-full text-center">{topThree[2].username}</p>
-                <p className={`text-xs sm:text-sm font-bold ${topThree[2].totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {topThree[2].totalPnl >= 0 ? '+' : ''}{topThree[2].totalPnl.toFixed(2)}
-                </p>
-                <div className="w-full mt-2 rounded-t-lg bg-gradient-to-t from-amber-800/20 to-amber-700/10 border border-b-0 border-amber-700/30 flex items-center justify-center">
-                  <div className="py-3 sm:py-5">
-                    <Award className="h-5 w-5 sm:h-6 sm:w-6 text-amber-700 mx-auto" />
-                    <span className="text-xs text-amber-700 mt-1 block">#3</span>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* Full Leaderboard Table */}
-          <Card className="max-w-4xl mx-auto border-border/50 overflow-hidden">
-            <div className="max-h-[500px] overflow-y-auto custom-scrollbar">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm z-10">
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-semibold text-muted-foreground w-16">#</th>
-                    <th className="text-left py-3 px-4 font-semibold text-muted-foreground">Trader</th>
-                    <th className="text-right py-3 px-4 font-semibold text-muted-foreground hidden sm:table-cell">Trades</th>
-                    <th className="text-right py-3 px-4 font-semibold text-muted-foreground hidden sm:table-cell">Win Rate</th>
-                    <th className="text-right py-3 px-4 font-semibold text-muted-foreground">P&L</th>
-                    <th className="text-right py-3 px-4 font-semibold text-muted-foreground">ROI</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <AnimatePresence>
-                    {leaderboard.map((c, i) => (
-                      <motion.tr
-                        key={c.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.3 }}
-                        className="border-b border-border/30 hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="py-3 px-4">
-                          <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full text-xs font-bold ${
-                            i === 0 ? 'bg-yellow-500/20 text-yellow-400' :
-                            i === 1 ? 'bg-gray-400/20 text-gray-300' :
-                            i === 2 ? 'bg-amber-700/20 text-amber-600' :
-                            'bg-muted text-muted-foreground'
-                          }`}>
-                            {c.rank}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={c.avatar || undefined} />
-                              <AvatarFallback className="bg-muted text-xs">{c.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                            </Avatar>
-                            <span className="font-medium truncate max-w-[120px] sm:max-w-none">{c.username}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right hidden sm:table-cell">{c.totalTrades}</td>
-                        <td className="py-3 px-4 text-right hidden sm:table-cell">
-                          <span className={c.winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}>
-                            {c.winRate.toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-semibold">
-                          <span className={`flex items-center justify-end gap-1 ${c.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {c.totalPnl >= 0 ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                            {Math.abs(c.totalPnl).toFixed(2)}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-semibold ${
-                            parseFloat(c.roi) >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                          }`}>
-                            {parseFloat(c.roi) >= 0 ? '+' : ''}{c.roi}%
-                          </span>
-                        </td>
-                      </motion.tr>
-                    ))}
-                  </AnimatePresence>
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </section>
-
-        {/* ── Recent Trades Feed ───────────────────────────────────── */}
-        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold">Live Trades</h2>
-            <p className="mt-3 text-muted-foreground text-lg">See what traders are doing right now</p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
-            {recentTrades.slice(0, 12).map((trade) => (
-              <motion.div
-                key={trade.id}
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.3 }}
-              >
-                <Card className="border-border/50 hover:border-border transition-colors">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={trade.competitor?.avatar || undefined} />
-                          <AvatarFallback className="text-[10px]">{trade.competitor?.username.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-xs font-medium truncate max-w-[100px]">{trade.competitor?.username}</span>
-                      </div>
-                      <Badge variant={trade.direction === 'long' ? 'default' : 'destructive'} className="text-[10px] px-1.5 py-0">
-                        {trade.direction === 'long' ? (
-                          <span className="flex items-center gap-0.5"><TrendingUp className="h-2.5 w-2.5" /> LONG</span>
-                        ) : (
-                          <span className="flex items-center gap-0.5"><TrendingDown className="h-2.5 w-2.5" /> SHORT</span>
-                        )}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-bold text-sm">{trade.pair}</p>
-                        <p className="text-xs text-muted-foreground">{trade.lotSize} lots</p>
-                      </div>
-                      <div className="text-right">
-                        <p className={`font-bold text-sm ${trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(trade.openedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* ── Prize Breakdown ──────────────────────────────────────── */}
+        {/* ── Prize Breakdown ────────────────────────────────────── */}
         {activeComp && (
-          <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 bg-gradient-to-b from-transparent to-emerald-950/10">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-bold">Prize Pool</h2>
-              <p className="mt-3 text-muted-foreground text-lg">
-                Total: <span className="text-2xl font-bold text-foreground">${activeComp._count.competitors * 10}</span>
-              </p>
-            </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-4xl mx-auto">
-              {prizeBreakdown.map((prize) => (
-                <motion.div
-                  key={prize.rank}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <Card className="text-center border-border/50 hover:border-emerald-500/30 transition-colors h-full">
-                    <CardContent className="pt-6">
-                      <prize.icon className={`h-8 w-8 mx-auto mb-3 ${prize.color}`} />
-                      <p className="text-3xl font-extrabold mb-1">{prize.pct}%</p>
-                      <p className="font-semibold mb-1">{prize.label}</p>
-                      <p className="text-sm text-muted-foreground">
-                        ${((activeComp._count.competitors * 10) * prize.pct / 100).toFixed(0)}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
+          <section className="mx-auto max-w-6xl px-4 py-16">
+            <div className="glass rounded-2xl p-6 sm:p-8 glow-green">
+              <div className="text-center mb-8">
+                <h2 className="text-2xl sm:text-3xl font-bold">Prize Distribution</h2>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Total Pool: <span className="text-2xl font-extrabold text-gradient-green font-mono tabular-nums">${(activeComp._count.competitors * 10).toLocaleString()}</span>
+                </p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto">
+                {[
+                  { rank: '1st', pct: '50%', amount: (activeComp._count.competitors * 10 * 0.5), icon: Crown, color: 'text-amber-400' },
+                  { rank: '2nd', pct: '25%', amount: (activeComp._count.competitors * 10 * 0.25), icon: Medal, color: 'text-gray-300' },
+                  { rank: '3rd', pct: '15%', amount: (activeComp._count.competitors * 10 * 0.15), icon: Award, color: 'text-orange-400' },
+                  { rank: '4-10', pct: '10%', amount: (activeComp._count.competitors * 10 * 0.1), icon: BarChart3, color: 'text-muted-foreground' },
+                ].map((p) => (
+                  <div key={p.rank} className="text-center p-3 rounded-xl glass-subtle">
+                    <p.icon className={`h-6 w-6 mx-auto mb-2 ${p.color}`} />
+                    <p className="text-2xl font-extrabold font-mono tabular-nums">{p.pct}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{p.rank} Place</p>
+                    <p className="text-sm font-semibold font-mono tabular-nums mt-1 text-emerald-400">${p.amount.toFixed(0)}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         )}
 
-        {/* ── Features / Trust Section ─────────────────────────────── */}
-        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold">Why ForexRush?</h2>
-            <p className="mt-3 text-muted-foreground text-lg">Built by traders, for traders</p>
-          </div>
-          <div className="grid sm:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        {/* ── Features ───────────────────────────────────────────── */}
+        <section className="mx-auto max-w-6xl px-4 py-16">
+          <div className="grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
             {[
-              { icon: Shield, title: 'Fair & Transparent', desc: 'Everyone starts with the same $10,000 balance. No hidden advantages. Pure skill-based competition.' },
-              { icon: Zap, title: 'Real-Time Action', desc: 'Live leaderboard updates, real-time P&L tracking, and instant trade execution. Feel the adrenaline.' },
-              { icon: DollarSign, title: 'Low Barrier', desc: 'Just $10 to enter. No large capital requirements. Compete with the best without breaking the bank.' },
+              { icon: Shield, title: 'Fair Competition', desc: 'Everyone starts equal with $10K. No hidden advantages — pure skill determines the winner.' },
+              { icon: Zap, title: 'Real-Time Leaderboard', desc: 'Live P&L updates every few seconds. Watch the rankings shift as traders execute.' },
+              { icon: Lock, title: 'Exclusive Access', desc: 'Invitation-only. 15 access codes per round keeps the competition elite.' },
             ].map((item) => (
-              <Card key={item.title} className="border-border/50 hover:border-emerald-500/30 transition-colors">
-                <CardContent className="pt-6 text-center">
-                  <div className="h-12 w-12 rounded-xl bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
-                    <item.icon className="h-6 w-6 text-emerald-500" />
+              <Card key={item.title} className="glass border-border/30 hover:border-emerald-500/20 transition-colors duration-300">
+                <CardContent className="pt-5 text-center">
+                  <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center mx-auto mb-3">
+                    <item.icon className="h-5 w-5 text-emerald-400" />
                   </div>
-                  <h3 className="font-bold text-lg mb-2">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                  <h3 className="font-bold mb-1.5">{item.title}</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
                 </CardContent>
               </Card>
             ))}
           </div>
         </section>
-
-        {/* ── CTA Section ──────────────────────────────────────────── */}
-        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="relative overflow-hidden rounded-2xl border border-emerald-500/20"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/80 via-emerald-900/40 to-green-950/60" />
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent" />
-            <div className="relative text-center px-4 py-16 sm:py-20">
-              <h2 className="text-3xl sm:text-5xl font-extrabold mb-4">
-                Ready to Compete?
-              </h2>
-              <p className="text-lg text-muted-foreground mb-8 max-w-xl mx-auto">
-                Join hundreds of traders competing for the top spot. Only $10 to enter — your trading skills do the rest.
-              </p>
-              <Button
-                size="lg"
-                className="bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white font-bold text-lg px-10 py-6 shadow-xl shadow-emerald-500/25"
-                onClick={() => setEnrollOpen(true)}
-              >
-                Enter Now — $10
-                <ArrowRight className="h-5 w-5 ml-2" />
-              </Button>
-            </div>
-          </motion.div>
-        </section>
       </main>
 
-      {/* ── Footer ─────────────────────────────────────────────────── */}
-      <footer className="border-t border-border/40 bg-background/80">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <div className="h-6 w-6 rounded-md bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center">
-                <TrendingUp className="h-3 w-3 text-white" />
-              </div>
-              <span className="font-bold">ForexRush</span>
+      {/* ── Footer ───────────────────────────────────────────────── */}
+      <footer className="border-t border-border/20 mt-auto">
+        <div className="mx-auto max-w-6xl px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="h-5 w-5 rounded-md bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
+              <TrendingUp className="h-2.5 w-2.5 text-white" />
             </div>
-            <p className="text-sm text-muted-foreground">
-              &copy; {new Date().getFullYear()} ForexRush. Competitive forex trading platform.
-            </p>
+            <span className="text-xs text-muted-foreground">ForexRush &copy; {new Date().getFullYear()}</span>
           </div>
+          <p className="text-[11px] text-muted-foreground">Simulated trading competition &middot; Not financial advice</p>
         </div>
       </footer>
     </div>
