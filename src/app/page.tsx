@@ -79,6 +79,7 @@ export default function Home() {
 
   // My profile
   const [myName, setMyName] = useState('');
+  const [myId, setMyId] = useState('');
 
   // ── Init ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -126,6 +127,7 @@ export default function Home() {
       });
       const d = await r.json();
       if (d.success) {
+        setMyId(d.competitor.id);
         setMyName(d.competitor.displayName || d.competitor.username);
         const lb = await fetch(`/api/leaderboard?competitionId=${comp.id}`).then(r2 => r2.json());
         setLeaderboard(lb);
@@ -281,13 +283,13 @@ export default function Home() {
   // ═══════════════════════════════════════════════════════════════
   //  TRADING ARENA (combined Bullrush + ForexRush)
   // ═══════════════════════════════════════════════════════════════
-  return <TradingArena leaderboard={leaderboard} myName={myName} compId={comp?.id || ''} />;
+  return <TradingArena leaderboard={leaderboard} myName={myName} myId={myId} compId={comp?.id || ''} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
 //  TRADING ARENA COMPONENT
 // ═══════════════════════════════════════════════════════════════════
-function TradingArena({ leaderboard, myName, compId }: { leaderboard: LbEntry[]; myName: string; compId: string }) {
+function TradingArena({ leaderboard, myName, myId, compId }: { leaderboard: LbEntry[]; myName: string; myId: string; compId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [activePair, setActivePair] = useState('EUR/USD');
@@ -539,23 +541,25 @@ function TradingArena({ leaderboard, myName, compId }: { leaderboard: LbEntry[];
     positionsRef.current = [...positionsRef.current, pos];
     setPositions([...positionsRef.current]);
 
-    // Save to DB
+    // Save to DB and use real trade ID
     try {
-      await fetch('/api/trades', {
+      const tr = await fetch('/api/trades', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          competitorId: '', competitionId: compId,
+          competitorId: myId, competitionId: compId,
           pair: activePair, direction: side === 'buy' ? 'long' : 'short', lotSize: size,
         }),
       });
+      const trData = await tr.json();
+      if (trData.id) pos.id = trData.id;
     } catch { /* silent */ }
 
     toast(`${side === 'buy' ? 'Bought' : 'Sold'} ${size} ${activePair} @ ${fp(d.cp, cfg.d)}`, 's');
   };
 
   // ── Close position ───────────────────────────────────────────
-  const closePosition = (idx: number) => {
+  const closePosition = async (idx: number) => {
     const p = positionsRef.current[idx];
     if (!p) return;
     balanceRef.current += p.pnl;
@@ -564,6 +568,15 @@ function TradingArena({ leaderboard, myName, compId }: { leaderboard: LbEntry[];
     positionsRef.current.splice(idx, 1);
     setPositions([...positionsRef.current]);
     toast(`Closed ${p.pair} ${p.side} — P&L: ${fmt$(p.pnl)}`, p.pnl >= 0 ? 's' : 'e');
+
+    // Sync close to DB
+    try {
+      await fetch('/api/trades', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tradeId: p.id, competitorId: myId }),
+      });
+    } catch { /* silent */ }
   };
 
   const cfg = PAIRS[activePair];
