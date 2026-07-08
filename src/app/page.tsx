@@ -4,14 +4,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Key, Lock, CheckCircle2, XCircle, Eye, EyeOff, Zap, Trophy, Shield } from 'lucide-react';
+import { Loader2, Key, Lock, CheckCircle2, XCircle, Eye, EyeOff, Zap, Trophy, Shield, Crown, Medal, BarChart3, Sofa } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // ═══════════════════════════════════════════════════════════════
 //  TYPES
 // ═══════════════════════════════════════════════════════════════
 interface Comp { id: string; title: string; status: string; endDate: string; _count: { competitors: number }; prizePool: number; }
-interface LbEntry { id: string; username: string; displayName?: string; avatar: string | null; totalPnl: number; totalTrades: number; winRate: number; rank: number; roi: string; }
+interface LbEntry { id: string; username: string; displayName?: string; avatar: string | null; totalPnl: number; totalTrades: number; winRate: number; rank: number; roi: string; currentBalance?: number; }
 interface Trade { id: string; pair: string; direction: string; lotSize: number; entryPrice: number; exitPrice: number | null; pnl: number; status: string; openedAt: string; competitor?: { username: string }; }
 
 // ═══════════════════════════════════════════════════════════════
@@ -313,6 +313,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
   const [leverage, setLeverage] = useState(10);
   const [lotSize, setLotSize] = useState('0.10');
   const [bottomTab, setBottomTab] = useState<'positions' | 'leaderboard' | 'history'>('positions');
+  const [viewMode, setViewMode] = useState<'arena' | 'lounge'>('arena');
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 's' | 'e' | 'i' }[]>([]);
 
   // Trading state
@@ -624,6 +625,17 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
           <span className="text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(totalPnl)}</span>
         </div>
         <div className="h-6 w-px mx-1" style={{ background: '#282840' }} />
+        {/* View toggle */}
+        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #282840' }}>
+          <button onClick={() => setViewMode('arena')} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+            style={{ background: viewMode === 'arena' ? '#c8f542' : 'transparent', color: viewMode === 'arena' ? '#07070c' : '#505068' }}>
+            <BarChart3 size={10} /> Arena
+          </button>
+          <button onClick={() => setViewMode('lounge')} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+            style={{ background: viewMode === 'lounge' ? '#c8f542' : 'transparent', color: viewMode === 'lounge' ? '#07070c' : '#505068' }}>
+            <Sofa size={10} /> Lounge
+          </button>
+        </div>
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg ml-auto" style={{ background: '#13131d', border: '1px solid #282840' }}>
           <span className="text-[10px] uppercase tracking-wider" style={{ color: '#505068' }}>LIVE</span>
           <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
@@ -634,7 +646,8 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
         <button onClick={onLogout} className="h-7 px-2.5 rounded-lg text-[10px] font-semibold cursor-pointer border-none ml-1" style={{ background: '#1a1a28', color: '#505068' }} title="Sign out">✕</button>
       </header>
 
-      {/* ── Main grid: chart + sidebar ──────────────────────── */}
+      {/* ═══ Arena view ═══ */}
+      {viewMode === 'arena' && (<>
       <div className="flex-1 grid overflow-hidden" style={{ gridTemplateColumns: '1fr 320px' }}>
         {/* Chart section */}
         <section className="flex flex-col overflow-hidden min-w-0">
@@ -910,8 +923,175 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
           )}
         </div>
       </div>
+      </>)}
 
-      {/* ── Toasts ───────────────────────────────────────────── */}
+      {/* ═══ Lounge view ═══ */}
+      {viewMode === 'lounge' && (
+        <div className="flex-1 overflow-y-auto" style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(200,245,66,.04) 0%, transparent 60%)' }}>
+          <div className="max-w-3xl mx-auto px-4 py-6">
+            {/* Podium */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+              <div className="flex items-center gap-2 mb-5">
+                <Crown size={16} style={{ color: '#ffd84d' }} />
+                <h2 className="text-lg font-bold tracking-tight">Top Traders</h2>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {[1, 0, 2].map((podIdx) => {
+                  const c = leaderboard[podIdx];
+                  if (!c) return <div key={podIdx} />;
+                  const isFirst = podIdx === 0;
+                  const heights = ['pt-6', '', 'pt-8'];
+                  const medals = ['linear-gradient(135deg,#ffd84d,#f5a623)', 'linear-gradient(135deg,#c0c0c0,#888)', 'linear-gradient(135deg,#cd7f32,#a0522d)'];
+                  const icons = [<Crown key="c" size={14} />, <Medal key="m" size={14} />, <Medal key="m2" size={14} />];
+                  const isMe = c.displayName === myName || c.username === myName;
+                  return (
+                    <motion.div key={c.id} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: podIdx === 0 ? 0.15 : podIdx === 1 ? 0 : 0.1 }}
+                      className={`rounded-xl p-4 text-center border ${heights[podIdx]}`}
+                      style={{
+                        background: isMe ? 'rgba(200,245,66,.06)' : '#0d0d14',
+                        borderColor: isMe ? 'rgba(200,245,66,.3)' : '#282840',
+                        boxShadow: isFirst ? '0 0 40px rgba(255,216,77,.08)' : 'none',
+                        order: podIdx,
+                      }}>
+                      {/* Avatar */}
+                      <div className="mx-auto mb-2 h-12 w-12 rounded-full flex items-center justify-center text-sm font-bold"
+                        style={{ background: medals[podIdx], color: '#1a1a26' }}>
+                        {(c.displayName || c.username).slice(0, 2).toUpperCase()}
+                      </div>
+                      {/* Rank badge */}
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        {icons[podIdx]}
+                        <span className="text-[10px] font-bold" style={{ color: '#505068' }}>#{podIdx + 1}</span>
+                        {isMe && <span className="text-[8px] px-1 py-0 rounded font-bold" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>}
+                      </div>
+                      <p className="text-xs font-bold mb-0.5 truncate">{c.displayName || c.username}</p>
+                      <p className="text-lg font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+                        {c.totalPnl >= 0 ? '+' : ''}{c.totalPnl >= 1000 ? `$${(c.totalPnl / 1000).toFixed(1)}K` : `$${c.totalPnl.toFixed(0)}`}
+                      </p>
+                      <p className="text-[10px] tabular-nums mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>ROI {c.roi}%</p>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </motion.div>
+
+            {/* My rank card */}
+            {(() => {
+              const me = leaderboard.find(c => c.displayName === myName || c.username === myName);
+              if (!me) return null;
+              return (
+                <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
+                  className="rounded-xl p-4 mb-6 border flex items-center gap-4"
+                  style={{ background: 'rgba(200,245,66,.06)', borderColor: 'rgba(200,245,66,.25)' }}>
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
+                    {myName.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-sm font-bold truncate">{me.displayName || me.username}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>
+                    </div>
+                    <div className="flex gap-4 text-[11px]">
+                      <span style={{ color: '#505068' }}>Rank <b style={{ color: '#ededf4' }}>#{me.rank || leaderboard.indexOf(me) + 1}</b></span>
+                      <span style={{ color: '#505068' }}>Balance <b className="tabular-nums" style={{ color: '#ededf4', fontFamily: "'JetBrains Mono', monospace" }}>${me.currentBalance?.toLocaleString() || '10,000'}</b></span>
+                      <span style={{ color: '#505068' }}>Trades <b style={{ color: '#ededf4' }}>{me.totalTrades}</b></span>
+                      <span style={{ color: '#505068' }}>Win Rate <b className="tabular-nums" style={{ color: me.winRate >= 50 ? '#00e87b' : '#ff3b5c', fontFamily: "'JetBrains Mono', monospace" }}>{me.winRate.toFixed(1)}%</b></span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-lg font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: me.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+                      {me.totalPnl >= 0 ? '+' : ''}{fmt$(me.totalPnl)}
+                    </p>
+                    <p className="text-[10px] tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>ROI {me.roi}%</p>
+                  </div>
+                </motion.div>
+              );
+            })()}
+
+            {/* Full leaderboard table */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Trophy size={14} style={{ color: '#c8f542' }} />
+                <h3 className="text-sm font-bold">All Rankings</h3>
+                <span className="text-[10px] ml-auto" style={{ color: '#505068' }}>{leaderboard.length} traders</span>
+              </div>
+              <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#282840', background: '#0d0d14' }}>
+                <table className="w-full text-[12px]" style={{ borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#13131d' }}>
+                      {['#', 'Trader', 'Balance', 'P&L', 'ROI', 'Win Rate', 'Trades'].map(h => (
+                        <th key={h} className="px-4 py-2.5 text-left font-medium uppercase tracking-wider text-[10px]" style={{ color: '#505068' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((c, i) => {
+                      const isMe = c.displayName === myName || c.username === myName;
+                      return (
+                        <tr key={c.id} className="transition-colors duration-75"
+                          style={{ borderBottom: '1px solid #1e1e30', background: isMe ? 'rgba(200,245,66,.06)' : 'transparent' }}
+                          onMouseEnter={e => { if (!isMe) e.currentTarget.style.background = '#1a1a28'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = isMe ? 'rgba(200,245,66,.06)' : 'transparent'; }}>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center justify-center h-5 w-5 rounded text-[10px] font-bold" style={{
+                              background: i === 0 ? 'linear-gradient(135deg,#ffd84d,#f5a623)' : i === 1 ? 'linear-gradient(135deg,#c0c0c0,#888)' : i === 2 ? 'linear-gradient(135deg,#cd7f32,#a0522d)' : '#1a1a28',
+                              color: i < 3 ? '#1a1a26' : '#505068',
+                            }}>{i + 1}</span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
+                                style={{ background: i < 3 ? ['linear-gradient(135deg,#ffd84d,#f5a623)', 'linear-gradient(135deg,#c0c0c0,#888)', 'linear-gradient(135deg,#cd7f32,#a0522d)'][i] : '#1a1a28', color: i < 3 ? '#1a1a26' : '#505068' }}>
+                                {(c.displayName || c.username).slice(0, 2).toUpperCase()}
+                              </div>
+                              <span className="font-semibold truncate">{c.displayName || c.username}</span>
+                              {isMe && <span className="text-[8px] px-1 py-0 rounded font-bold shrink-0" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>
+                            ${c.currentBalance?.toLocaleString() || '10,000'}
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+                            {c.totalPnl >= 0 ? '+' : ''}{fmt$(c.totalPnl)}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{
+                              color: parseFloat(c.roi) >= 0 ? '#00e87b' : '#ff3b5c',
+                              background: parseFloat(c.roi) >= 0 ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)',
+                            }}>{c.roi}%</span>
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.winRate >= 50 ? '#00e87b' : '#ff3b5c' }}>
+                            {c.winRate.toFixed(1)}%
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{c.totalTrades}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+
+            {/* Competition stats footer */}
+            <div className="grid grid-cols-3 gap-3 mt-6 mb-4">
+              {[
+                { label: 'Total Traders', value: leaderboard.length, icon: <Shield size={12} /> },
+                { label: 'Prize Pool', value: `$${(leaderboard.length * 10).toLocaleString()}`, icon: <Trophy size={12} /> },
+                { label: '1st Place Prize', value: `${Math.round(leaderboard.length * 10 * 0.5)}%`, icon: <Crown size={12} /> },
+              ].map(s => (
+                <div key={s.label} className="rounded-xl p-4 text-center border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+                  <div className="flex items-center justify-center gap-1.5 mb-1.5" style={{ color: '#505068' }}>
+                    {s.icon}
+                    <span className="text-[10px] uppercase tracking-wider">{s.label}</span>
+                  </div>
+                  <p className="text-xl font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#c8f542' }}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="fixed top-14 right-3 z-[9999] flex flex-col gap-1.5">
         <AnimatePresence>
           {toasts.map(t => (
