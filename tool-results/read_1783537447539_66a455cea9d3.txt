@@ -1,0 +1,1113 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useRef, useCallback } from 'react';
+     4→import { Button } from '@/components/ui/button';
+     5→import { Input } from '@/components/ui/input';
+     6→import { Badge } from '@/components/ui/badge';
+     7→import { Loader2, Key, Lock, CheckCircle2, XCircle, Eye, EyeOff, Zap, Trophy, Shield, Crown, Medal, BarChart3, Sofa } from 'lucide-react';
+     8→import { motion, AnimatePresence } from 'framer-motion';
+     9→
+    10→// ═══════════════════════════════════════════════════════════════
+    11→//  TYPES
+    12→// ═══════════════════════════════════════════════════════════════
+    13→interface Comp { id: string; title: string; status: string; endDate: string; _count: { competitors: number }; prizePool: number; }
+    14→interface LbEntry { id: string; username: string; displayName?: string; avatar: string | null; totalPnl: number; totalTrades: number; winRate: number; rank: number; roi: string; currentBalance?: number; }
+    15→interface Trade { id: string; pair: string; direction: string; lotSize: number; entryPrice: number; exitPrice: number | null; pnl: number; status: string; openedAt: string; competitor?: { username: string }; }
+    16→
+    17→// ═══════════════════════════════════════════════════════════════
+    18→//  PAIR CONFIG (from Bullrush)
+    19→// ═══════════════════════════════════════════════════════════════
+    20→const PAIRS: Record<string, { g: string; f: string; p: number; vol: number; pip: number; d: number; ls: number; sp: number; }> = {
+    21→  'EUR/USD': { g:'Forex Majors', f:'Euro / US Dollar', p:1.08470, vol:.00025, pip:.0001, d:5, ls:100000, sp:.00012 },
+    22→  'GBP/USD': { g:'Forex Majors', f:'British Pound / US Dollar', p:1.27150, vol:.00030, pip:.0001, d:5, ls:100000, sp:.00015 },
+    23→  'USD/JPY': { g:'Forex Majors', f:'US Dollar / Japanese Yen', p:155.320, vol:.035, pip:.01, d:3, ls:100000, sp:.015 },
+    24→  'AUD/USD': { g:'Forex Majors', f:'Australian Dollar / US Dollar', p:0.65480, vol:.00020, pip:.0001, d:5, ls:100000, sp:.00014 },
+    25→  'NZD/USD': { g:'Forex Majors', f:'New Zealand Dollar / US Dollar', p:0.60120, vol:.00018, pip:.0001, d:5, ls:100000, sp:.00016 },
+    26→  'USD/CAD': { g:'Forex Majors', f:'US Dollar / Canadian Dollar', p:1.37250, vol:.00025, pip:.0001, d:5, ls:100000, sp:.00015 },
+    27→  'EUR/GBP': { g:'Forex Crosses', f:'Euro / British Pound', p:.85320, vol:.00018, pip:.0001, d:5, ls:100000, sp:.00018 },
+    28→  'EUR/JPY': { g:'Forex Crosses', f:'Euro / Japanese Yen', p:168.450, vol:.040, pip:.01, d:3, ls:100000, sp:.020 },
+    29→  'GBP/JPY': { g:'Forex Crosses', f:'British Pound / Japanese Yen', p:197.380, vol:.045, pip:.01, d:3, ls:100000, sp:.025 },
+    30→  'USD/CHF': { g:'Forex Majors', f:'US Dollar / Swiss Franc', p:0.88250, vol:.00022, pip:.0001, d:5, ls:100000, sp:.00012 },
+    31→  'BTC/USD': { g:'Crypto', f:'Bitcoin', p:67432.18, vol:15, pip:.01, d:2, ls:1, sp:1.5 },
+    32→  'ETH/USD': { g:'Crypto', f:'Ethereum', p:3521.07, vol:2.5, pip:.01, d:2, ls:1, sp:.8 },
+    33→  'SOL/USD': { g:'Crypto', f:'Solana', p:172.44, vol:.8, pip:.01, d:2, ls:1, sp:.15 },
+    34→  'XRP/USD': { g:'Crypto', f:'Ripple', p:.5234, vol:.002, pip:.0001, d:4, ls:1, sp:.0008 },
+    35→  'DOGE/USD': { g:'Crypto', f:'Dogecoin', p:.1642, vol:.001, pip:.0001, d:4, ls:1, sp:.0005 },
+    36→};
+    37→
+    38→const TICKER_PAIRS = [
+    39→  { pair:'EUR/USD', price:1.0876, change:0.12 }, { pair:'GBP/USD', price:1.2734, change:-0.08 },
+    40→  { pair:'USD/JPY', price:149.82, change:0.34 }, { pair:'AUD/USD', price:0.6543, change:-0.21 },
+    41→  { pair:'XAU/USD', price:2342.50, change:1.24 }, { pair:'BTC/USD', price:67842, change:2.15 },
+    42→  { pair:'ETH/USD', price:3521, change:1.05 }, { pair:'SOL/USD', price:172.44, change:-0.45 },
+    43→];
+    44→
+    45→// ═══════════════════════════════════════════════════════════════
+    46→//  HELPERS
+    47→// ═══════════════════════════════════════════════════════════════
+    48→const fp = (p: number, dec?: number) => {
+    49→  const d = dec ?? 5;
+    50→  if (d <= 2 && Math.abs(p) >= 1000) return p.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    51→  return p.toFixed(d);
+    52→};
+    53→const ns = (range: number, ticks: number) => {
+    54→  const r = range / ticks, m = Math.pow(10, Math.floor(Math.log10(Math.max(r, 1e-12))));
+    55→  const n = r / m;
+    56→  return Math.max((n <= 1.5 ? 1 : n <= 3.5 ? 2 : n <= 7.5 ? 5 : 10) * m, 1e-12);
+    57→};
+    58→const fmt$ = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2);
+    59→const fmtBal = (v: number) => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    60→
+    61→// ═══════════════════════════════════════════════════════════════
+    62→//  MAIN PAGE
+    63→// ═══════════════════════════════════════════════════════════════
+    64→export default function Home() {
+    65→  // ── App state ─────────────────────────────────────────────────
+    66→  const [phase, setPhase] = useState<'loading' | 'landing' | 'enroll' | 'arena'>('loading');
+    67→  const [comp, setComp] = useState<Comp | null>(null);
+    68→  const [leaderboard, setLeaderboard] = useState<LbEntry[]>([]);
+    69→  const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
+    70→
+    71→  // License form
+    72→  const [code, setCode] = useState('');
+    73→  const [username, setUsername] = useState('');
+    74→  const [showCode, setShowCode] = useState(false);
+    75→  const [licErr, setLicErr] = useState('');
+    76→  const [licBusy, setLicBusy] = useState(false);
+    77→  const [redeemBusy, setRedeemBusy] = useState(false);
+    78→  const [verifiedName, setVerifiedName] = useState('');
+    79→
+    80→  // My profile
+    81→  const [myName, setMyName] = useState('');
+    82→  const [myId, setMyId] = useState('');
+    83→
+    84→  // ── Init ─────────────────────────────────────────────────────
+    85→  useEffect(() => {
+    86→    (async () => {
+    87→      try {
+    88→        await fetch('/api/seed', { method: 'POST' });
+    89→        const cr = await fetch('/api/competitions');
+    90→        const cs = await cr.json();
+    91→        const a = cs.find((c: Comp) => c.status === 'active') || cs[0];
+    92→        if (a) {
+    93→          setComp(a);
+    94→          const [lb, tr] = await Promise.all([
+    95→            fetch(`/api/leaderboard?competitionId=${a.id}`).then(r => r.json()),
+    96→            fetch(`/api/trades?competitionId=${a.id}`).then(r => r.json()),
+    97→          ]);
+    98→          setLeaderboard(lb);
+    99→          setRecentTrades(tr);
+   100→
+   101→          // Check for existing session
+   102→          const saved = localStorage.getItem('fx_session');
+   103→          if (saved) {
+   104→            try {
+   105→              const s = JSON.parse(saved);
+   106→              const me = lb.find((e: LbEntry) => e.id === s.myId);
+   107→              if (me) {
+   108→                setMyId(s.myId);
+   109→                setMyName(me.displayName || me.username);
+   110→                setPhase('arena');
+   111→                return;
+   112→              }
+   113→            } catch { localStorage.removeItem('fx_session'); }
+   114→          }
+   115→        }
+   116→      } catch (e) { console.error(e); }
+   117→      setPhase('landing');
+   118→    })();
+   119→  }, []);
+   120→
+   121→  // ── Verify license ───────────────────────────────────────────
+   122→  const verifyLic = useCallback(async () => {
+   123→    if (!code.trim()) return;
+   124→    setLicBusy(true); setLicErr('');
+   125→    try {
+   126→      const r = await fetch(`/api/license?code=${encodeURIComponent(code.trim())}`);
+   127→      const d = await r.json();
+   128→      if (d.valid) { setVerifiedName(d.clientName); setPhase('enroll'); }
+   129→      else setLicErr(d.error || 'Invalid code');
+   130→    } catch { setLicErr('Network error'); }
+   131→    setLicBusy(false);
+   132→  }, [code]);
+   133→
+   134→  // ── Redeem & enter arena ──────────────────────────────────────
+   135→  const doEnroll = useCallback(async () => {
+   136→    if (!code.trim() || !username.trim() || !comp) return;
+   137→    setRedeemBusy(true); setLicErr('');
+   138→    try {
+   139→      const r = await fetch('/api/license', {
+   140→        method: 'POST', headers: { 'Content-Type': 'application/json' },
+   141→        body: JSON.stringify({ code: code.trim(), competitionId: comp.id, username: username.trim() }),
+   142→      });
+   143→      const d = await r.json();
+   144→      if (d.success) {
+   145→        setMyId(d.competitor.id);
+   146→        setMyName(d.competitor.displayName || d.competitor.username);
+   147→        localStorage.setItem('fx_session', JSON.stringify({ myId: d.competitor.id }));
+   148→        const lb = await fetch(`/api/leaderboard?competitionId=${comp.id}`).then(r2 => r2.json());
+   149→        setLeaderboard(lb);
+   150→        setPhase('arena');
+   151→      } else setLicErr(d.error || 'Failed');
+   152→    } catch { setLicErr('Network error'); }
+   153→    setRedeemBusy(false);
+   154→  }, [code, username, comp]);
+   155→
+   156→  // ═══════════════════════════════════════════════════════════════
+   157→  //  LOADING
+   158→  // ═══════════════════════════════════════════════════════════════
+   159→  if (phase === 'loading') return (
+   160→    <div className="h-screen flex items-center justify-center" style={{ background: '#07070c' }}>
+   161→      <div className="flex flex-col items-center gap-3">
+   162→        <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+   163→          <Zap size={18} style={{ color: '#07070c' }} />
+   164→        </div>
+   165→        <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#c8f542' }} />
+   166→      </div>
+   167→    </div>
+   168→  );
+   169→
+   170→  // ═══════════════════════════════════════════════════════════════
+   171→  //  LANDING
+   172→  // ═══════════════════════════════════════════════════════════════
+   173→  if (phase === 'landing') return (
+   174→    <div className="min-h-screen flex flex-col" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
+   175→      {/* Ticker */}
+   176→      <div className="overflow-hidden border-b" style={{ borderColor: '#1e1e30' }}>
+   177→        <div className="flex animate-ticker whitespace-nowrap py-1 px-4" style={{ background: '#0d0d14' }}>
+   178→          {[...TICKER_PAIRS, ...TICKER_PAIRS].map((t, i) => (
+   179→            <span key={i} className="inline-flex items-center gap-2 mx-5 text-xs">
+   180→              <span style={{ color: '#8585a0' }}>{t.pair}</span>
+   181→              <span className="tabular-nums">{t.price.toFixed(t.pair === 'XAU/USD' ? 2 : 4)}</span>
+   182→              <span className="tabular-nums" style={{ color: t.change >= 0 ? '#00e87b' : '#ff3b5c' }}>
+   183→                {t.change >= 0 ? '+' : ''}{t.change.toFixed(2)}%
+   184→              </span>
+   185→            </span>
+   186→          ))}
+   187→        </div>
+   188→      </div>
+   189→
+   190→      <nav className="flex items-center justify-between px-4 h-12 border-b" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+   191→        <div className="flex items-center gap-2">
+   192→          <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+   193→            <Zap size={12} style={{ color: '#07070c' }} />
+   194→          </div>
+   195→          <span className="text-base font-bold tracking-tight">ForexRush</span>
+   196→          {comp && <Badge className="text-[9px] px-1.5 py-0 border" style={{ borderColor: 'rgba(200,245,66,.3)', color: '#c8f542', background: 'transparent' }}>LIVE</Badge>}
+   197→        </div>
+   198→        <Button onClick={() => setPhase('landing')} className="text-xs font-semibold h-8 px-4 rounded-lg" style={{ background: '#c8f542', color: '#07070c' }}>
+   199→          <Key size={12} className="mr-1.5" /> Redeem Code
+   200→        </Button>
+   201→      </nav>
+   202→
+   203→      <main className="flex-1 flex items-center justify-center px-4">
+   204→        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
+   205→          <div className="text-center mb-6">
+   206→            <h1 className="text-3xl font-extrabold tracking-tight mb-2">Enter the Arena.</h1>
+   207→            <p className="text-sm" style={{ color: '#8585a0' }}>Redeem your exclusive access code to join the forex competition.</p>
+   208→          </div>
+   209→
+   210→          <div className="rounded-xl p-5 border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+   211→            <div className="flex items-center gap-2 mb-4">
+   212→              <Key size={16} style={{ color: '#c8f542' }} />
+   213→              <span className="text-sm font-semibold">Redeem Access Code</span>
+   214→            </div>
+   215→            <div className="relative mb-3">
+   216→              <input
+   217→                placeholder="COMP-XXXX-XXXX" value={code} maxLength={14}
+   218→                onChange={e => { setCode(e.target.value.toUpperCase()); setLicErr(''); }}
+   219→                onKeyDown={e => e.key === 'Enter' && verifyLic()}
+   220→                className="w-full h-11 rounded-lg text-center text-sm tracking-widest uppercase outline-none tabular-nums"
+   221→                style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4', fontFamily: "'JetBrains Mono', monospace" }}
+   222→              />
+   223→            </div>
+   224→            {licErr && <p className="text-xs mb-3 flex items-center gap-1" style={{ color: '#ff3b5c' }}><XCircle size={12} />{licErr}</p>}
+   225→            <button onClick={verifyLic} disabled={licBusy || code.length < 14}
+   226→              className="w-full h-10 rounded-lg text-sm font-bold transition-all duration-150 disabled:opacity-40"
+   227→              style={{ background: '#c8f542', color: '#07070c' }}>
+   228→              {licBusy ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Verify & Continue'}
+   229→            </button>
+   230→            <p className="text-[10px] text-center mt-3" style={{ color: '#505068' }}>15 exclusive codes &middot; Single-use &middot; 30-day validity</p>
+   231→          </div>
+   232→
+   233→          {/* Prize info */}
+   234→          {comp && (
+   235→            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+   236→              {[
+   237→                { l: 'Traders', v: comp._count.competitors },
+   238→                { l: 'Prize Pool', v: `$${comp._count.competitors * 10}` },
+   239→                { l: '1st Prize', v: '50%' },
+   240→              ].map(s => (
+   241→                <div key={s.l} className="rounded-lg p-2 border" style={{ background: '#0d0d14', borderColor: '#1e1e30' }}>
+   242→                  <p className="text-base font-bold tabular-nums">{s.v}</p>
+   243→                  <p className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>{s.l}</p>
+   244→                </div>
+   245→              ))}
+   246→            </div>
+   247→          )}
+   248→        </motion.div>
+   249→      </main>
+   250→    </div>
+   251→  );
+   252→
+   253→  // ═══════════════════════════════════════════════════════════════
+   254→  //  ENROLL
+   255→  // ═══════════════════════════════════════════════════════════════
+   256→  if (phase === 'enroll') return (
+   257→    <div className="min-h-screen flex flex-col" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
+   258→      <nav className="flex items-center gap-2 px-4 h-12 border-b" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+   259→        <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+   260→          <Zap size={12} style={{ color: '#07070c' }} />
+   261→        </div>
+   262→        <span className="text-base font-bold">ForexRush</span>
+   263→        <Button variant="ghost" size="sm" className="ml-auto text-xs" style={{ color: '#8585a0' }} onClick={() => { setPhase('landing'); setVerifiedName(''); setLicErr(''); }}>Back</Button>
+   264→      </nav>
+   265→      <main className="flex-1 flex items-center justify-center px-4">
+   266→        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
+   267→          <div className="rounded-xl p-5 border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+   268→            <div className="flex items-center gap-2 mb-4">
+   269→              <CheckCircle2 size={16} style={{ color: '#00e87b' }} />
+   270→              <div>
+   271→                <p className="text-xs font-semibold" style={{ color: '#00e87b' }}>Access Code Verified</p>
+   272→                <p className="text-[10px]" style={{ color: '#8585a0' }}>{verifiedName}</p>
+   273→              </div>
+   274→            </div>
+   275→            <h2 className="text-xl font-bold mb-1">Create Trader Profile</h2>
+   276→            <p className="text-xs mb-4" style={{ color: '#8585a0' }}>Choose a name for the leaderboard.</p>
+   277→            <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4" style={{ background: '#1a1a28', border: '1px solid #282840' }}>
+   278→              <Lock size={12} style={{ color: '#c8f542' }} />
+   279→              <span className="text-xs font-mono tracking-wider" style={{ color: '#c8f542' }}>{code}</span>
+   280→              <Badge className="ml-auto text-[9px] border" style={{ borderColor: 'rgba(200,245,66,.3)', color: '#c8f542', background: 'transparent' }}>VERIFIED</Badge>
+   281→            </div>
+   282→            <input placeholder="e.g. PipMaster_99" value={username} maxLength={20}
+   283→              onChange={e => setUsername(e.target.value)}
+   284→              onKeyDown={e => e.key === 'Enter' && doEnroll()}
+   285→              className="w-full h-10 rounded-lg px-3 text-sm outline-none mb-1"
+   286→              style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4' }} />
+   287→            {licErr && <p className="text-xs mb-2 flex items-center gap-1" style={{ color: '#ff3b5c' }}><XCircle size={12} />{licErr}</p>}
+   288→            <button onClick={doEnroll} disabled={redeemBusy || !username.trim()}
+   289→              className="w-full h-10 rounded-lg text-sm font-bold mt-2 disabled:opacity-40"
+   290→              style={{ background: '#c8f542', color: '#07070c' }}>
+   291→              {redeemBusy ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Enter Competition'}
+   292→            </button>
+   293→          </div>
+   294→        </motion.div>
+   295→      </main>
+   296→    </div>
+   297→  );
+   298→
+   299→  // ═══════════════════════════════════════════════════════════════
+   300→  //  TRADING ARENA (combined Bullrush + ForexRush)
+   301→  // ═══════════════════════════════════════════════════════════════
+   302→  return <TradingArena leaderboard={leaderboard} myName={myName} myId={myId} compId={comp?.id || ''} onLogout={() => { localStorage.removeItem('fx_session'); setMyId(''); setMyName(''); setPhase('landing'); }} />;
+   303→}
+   304→
+   305→// ═══════════════════════════════════════════════════════════════════
+   306→//  TRADING ARENA COMPONENT
+   307→// ═══════════════════════════════════════════════════════════════════
+   308→function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderboard: LbEntry[]; myName: string; myId: string; compId: string; onLogout: () => void }) {
+   309→  const canvasRef = useRef<HTMLCanvasElement>(null);
+   310→  const wrapRef = useRef<HTMLDivElement>(null);
+   311→  const [activePair, setActivePair] = useState('EUR/USD');
+   312→  const [side, setSide] = useState<'buy' | 'sell'>('buy');
+   313→  const [leverage, setLeverage] = useState(10);
+   314→  const [lotSize, setLotSize] = useState('0.10');
+   315→  const [bottomTab, setBottomTab] = useState<'positions' | 'leaderboard' | 'history'>('positions');
+   316→  const [viewMode, setViewMode] = useState<'arena' | 'lounge'>('arena');
+   317→  const [toasts, setToasts] = useState<{ id: number; msg: string; type: 's' | 'e' | 'i' }[]>([]);
+   318→
+   319→  // Trading state
+   320→  const balanceRef = useRef(10000);
+   321→  const [balance, setBalance] = useState(10000);
+   322→  const positionsRef = useRef<any[]>([]);
+   323→  const [positions, setPositions] = useState<any[]>([]);
+   324→  const [history, setHistory] = useState<any[]>([]);
+   325→  const [totalPnl, setTotalPnl] = useState(0);
+   326→
+   327→  // Chart state
+   328→  const [pairData, setPairData] = useState<Record<string, { cn: any[]; cp: number; ch: number }>>({});
+   329→  const [sO, setSO] = useState(0);
+   330→  const vc = 80;
+   331→  const crosshair = useRef({ x: null as number | null, y: null as number | null });
+   332→  const isDrag = useRef(false);
+   333→  const dragStartX = useRef(0);
+   334→  const dragStartO = useRef(0);
+   335→
+   336→  // ── Generate candle data ─────────────────────────────────────
+   337→  const genCandles = useCallback((n: number, start: number, vol: number) => {
+   338→    const d: any[] = []; let pr = start; const now = Date.now();
+   339→    for (let i = 0; i < n; i++) {
+   340→      const dr = (Math.random() - 0.48) * vol, o = pr, c = o + dr;
+   341→      const h = Math.max(o, c) + Math.random() * vol * 0.8;
+   342→      const l = Math.min(o, c) - Math.random() * vol * 0.8;
+   343→      d.push({ o, h, l, c, v: 50 + Math.random() * 450, t: now - (n - i) * 15 * 60000 });
+   344→      pr = c;
+   345→    }
+   346→    return d;
+   347→  }, []);
+   348→
+   349→  // ── Init pair data ───────────────────────────────────────────
+   350→  useEffect(() => {
+   351→    const pd: Record<string, { cn: any[]; cp: number; ch: number }> = {};
+   352→    for (const [s, c] of Object.entries(PAIRS)) {
+   353→      const cn = genCandles(300, c.p, c.vol);
+   354→      const cp = cn[cn.length - 1].c;
+   355→      pd[s] = { cn, cp, ch: ((cp - cn[0].o) / cn[0].o) * 100 };
+   356→    }
+   357→    setPairData(pd);
+   358→  }, [genCandles]);
+   359→
+   360→  // ── Price tick ───────────────────────────────────────────────
+   361→  useEffect(() => {
+   362→    const iv = setInterval(() => {
+   363→      setPairData(prev => {
+   364→        const next = { ...prev };
+   365→        for (const [s, cfg] of Object.entries(PAIRS)) {
+   366→          if (!next[s]) continue;
+   367→          const cn = [...next[s].cn];
+   368→          const last = cn[cn.length - 1];
+   369→          const drift = (Math.random() - 0.48) * cfg.vol * 0.3;
+   370→          const newC = last.c + drift;
+   371→          const newO = last.c;
+   372→          const h = Math.max(newO, newC) + Math.random() * cfg.vol * 0.15;
+   373→          const l = Math.min(newO, newC) - Math.random() * cfg.vol * 0.15;
+   374→          cn.push({ o: newO, h, l, c: newC, v: 50 + Math.random() * 200, t: Date.now() });
+   375→          if (cn.length > 500) cn.shift();
+   376→          next[s] = { ...next[s], cn, cp: newC, ch: ((newC - cn[0].o) / cn[0].o) * 100 };
+   377→        }
+   378→        return next;
+   379→      });
+   380→    }, 1000);
+   381→    return () => clearInterval(iv);
+   382→  }, []);
+   383→
+   384→  // ── Update positions P&L ─────────────────────────────────────
+   385→  useEffect(() => {
+   386→    const iv = setInterval(() => {
+   387→      const pd = pairData;
+   388→      positionsRef.current = positionsRef.current.map(p => {
+   389→        const d = pd[p.pair];
+   390→        if (!d) return p;
+   391→        const cfg = PAIRS[p.pair];
+   392→        if (!cfg) return p;
+   393→        const dir = p.side === 'Long' ? 1 : -1;
+   394→        let pnl = (d.cp - p.entry) * p.size * cfg.ls * dir;
+   395→        if (p.pair.includes('JPY') && !p.pair.startsWith('XRP') && !p.pair.startsWith('DOGE')) pnl /= d.cp;
+   396→        return { ...p, mark: d.cp, pnl };
+   397→      });
+   398→      const tp = positionsRef.current.reduce((s: number, p: any) => s + p.pnl, 0);
+   399→      setTotalPnl(tp);
+   400→      setBalance(balanceRef.current + tp);
+   401→      setPositions([...positionsRef.current]);
+   402→    }, 500);
+   403→    return () => clearInterval(iv);
+   404→  }, [pairData]);
+   405→
+   406→  // ── Canvas chart drawing ─────────────────────────────────────
+   407→  const draw = useCallback(() => {
+   408→    const canvas = canvasRef.current;
+   409→    const wrap = wrapRef.current;
+   410→    if (!canvas || !wrap || !pairData[activePair]) return;
+   411→    const ctx = canvas.getContext('2d');
+   412→    if (!ctx) return;
+   413→    const rect = wrap.getBoundingClientRect();
+   414→    const dpr = window.devicePixelRatio || 1;
+   415→    const cw = rect.width, ch = rect.height;
+   416→    canvas.width = cw * dpr; canvas.height = ch * dpr;
+   417→    canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+   418→    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+   419→
+   420→    const d = pairData[activePair];
+   421→    const cfg = PAIRS[activePair];
+   422→    const cn = d.cn;
+   423→    ctx.clearRect(0, 0, cw, ch);
+   424→
+   425→    const paW = cfg.d <= 2 ? 78 : 88, taH = 22;
+   426→    const aW = cw - paW, aH = ch - taH;
+   427→    if (aW <= 0 || aH <= 0) return;
+   428→
+   429→    const vC = Math.min(vc, cn.length);
+   430→    const sI = Math.max(0, Math.min(sO, cn.length - vC));
+   431→    const eI = Math.min(cn.length, sI + vC);
+   432→    const vis = cn.slice(sI, eI);
+   433→    if (!vis.length) return;
+   434→
+   435→    let mn = Infinity, mx = -Infinity;
+   436→    vis.forEach((c: any) => { mn = Math.min(mn, c.l); mx = Math.max(mx, c.h); });
+   437→    const pP = (mx - mn) * 0.08 || cfg.vol; mn -= pP; mx += pP;
+   438→    const pY = (p: number) => aH - ((p - mn) / (mx - mn)) * aH;
+   439→    const cW2 = Math.max(1, (aW / vC) * 0.7);
+   440→    const gap = aW / vC;
+   441→    const iX = (i: number) => i * gap + gap * 0.5;
+   442→
+   443→    // Grid
+   444→    ctx.strokeStyle = 'rgba(40,40,64,.5)'; ctx.lineWidth = 0.5;
+   445→    const ps = ns(mx - mn, 6);
+   446→    let gp = Math.ceil(mn / ps) * ps;
+   447→    ctx.font = '9px "JetBrains Mono", monospace'; ctx.textAlign = 'right';
+   448→    while (gp < mx) {
+   449→      const y = pY(gp);
+   450→      if (y > 0 && y < aH) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(aW, y); ctx.stroke(); ctx.fillStyle = '#404060'; ctx.fillText(fp(gp, cfg.d), aW + paW - 5, y + 3); }
+   451→      gp += ps;
+   452→    }
+   453→
+   454→    // Candles
+   455→    vis.forEach((c: any, i: number) => {
+   456→      const x = iX(i);
+   457→      const gn = c.c >= c.o;
+   458→      const col = gn ? '#00e87b' : '#ff3b5c';
+   459→      ctx.strokeStyle = col; ctx.lineWidth = 1;
+   460→      ctx.beginPath(); ctx.moveTo(x, pY(c.h)); ctx.lineTo(x, pY(c.l)); ctx.stroke();
+   461→      const bt = pY(Math.max(c.o, c.c)), bb = pY(Math.min(c.o, c.c));
+   462→      ctx.fillStyle = col; ctx.fillRect(x - cW2 / 2, bt, cW2, Math.max(1, bb - bt));
+   463→    });
+   464→
+   465→    // Price line
+   466→    const lY = pY(d.cp);
+   467→    const lg = vis.length > 0 && vis[vis.length - 1].c >= vis[vis.length - 1].o;
+   468→    ctx.setLineDash([3, 3]); ctx.strokeStyle = lg ? 'rgba(0,232,123,.5)' : 'rgba(255,59,92,.5)'; ctx.lineWidth = 1;
+   469→    ctx.beginPath(); ctx.moveTo(0, lY); ctx.lineTo(aW, lY); ctx.stroke(); ctx.setLineDash([]);
+   470→    ctx.fillStyle = lg ? '#00e87b' : '#ff3b5c';
+   471→    ctx.beginPath(); ctx.roundRect(aW, lY - 9, paW, 18, 3); ctx.fill();
+   472→    ctx.fillStyle = '#07070c'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+   473→    ctx.fillText(fp(d.cp, cfg.d), aW + paW / 2, lY + 3);
+   474→
+   475→    // Crosshair
+   476→    const xh = crosshair.current;
+   477→    if (xh.x !== null && xh.y !== null && xh.x < aW && xh.y < aH) {
+   478→      ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(200,245,66,.3)'; ctx.lineWidth = 0.5;
+   479→      ctx.beginPath(); ctx.moveTo(xh.x, 0); ctx.lineTo(xh.x, aH); ctx.stroke();
+   480→      ctx.beginPath(); ctx.moveTo(0, xh.y); ctx.lineTo(aW, xh.y); ctx.stroke(); ctx.setLineDash([]);
+   481→      const hp = mn + (1 - xh.y / aH) * (mx - mn);
+   482→      ctx.fillStyle = '#c8f542'; ctx.beginPath(); ctx.roundRect(aW, xh.y - 9, paW, 18, 3); ctx.fill();
+   483→      ctx.fillStyle = '#07070c'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+   484→      ctx.fillText(fp(hp, cfg.d), aW + paW / 2, xh.y + 3);
+   485→    }
+   486→
+   487→    // Border
+   488→    ctx.strokeStyle = '#282840'; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, aW - 0.5, aH - 0.5);
+   489→  }, [pairData, activePair, sO]);
+   490→
+   491→  // ── Chart resize ─────────────────────────────────────────────
+   492→  useEffect(() => {
+   493→    draw();
+   494→    const onResize = () => draw();
+   495→    window.addEventListener('resize', onResize);
+   496→    return () => window.removeEventListener('resize', onResize);
+   497→  }, [draw]);
+   498→
+   499→  // Re-draw on data/pair change
+   500→  useEffect(() => { setSO(pairData[activePair]?.cn.length - vc || 0); }, [activePair]);
+   501→  useEffect(() => { draw(); }, [draw]);
+   502→
+   503→  // ── Chart mouse events ───────────────────────────────────────
+   504→  const onCanvasMove = (e: React.MouseEvent) => {
+   505→    const canvas = canvasRef.current;
+   506→    if (!canvas) return;
+   507→    const r = canvas.getBoundingClientRect();
+   508→    crosshair.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+   509→    if (isDrag.current) {
+   510→      const dx = e.clientX - dragStartX.current;
+   511→      const cd = Math.round(dx / (r.width / vc));
+   512→      const cnLen = pairData[activePair]?.cn.length || 0;
+   513→      setSO(Math.max(0, Math.min(cnLen - vc, dragStartO.current - cd)));
+   514→    }
+   515→  };
+   516→  const onCanvasDown = (e: React.MouseEvent) => {
+   517→    isDrag.current = true;
+   518→    dragStartX.current = e.clientX;
+   519→    dragStartO.current = sO;
+   520→  };
+   521→  const onCanvasUp = () => { isDrag.current = false; };
+   522→  const onCanvasLeave = () => { crosshair.current = { x: null, y: null }; isDrag.current = false; };
+   523→  const onWheel = (e: React.WheelEvent) => {
+   524→    e.preventDefault();
+   525→    setSO(prev => Math.max(0, Math.min((pairData[activePair]?.cn.length || 0) - 20, prev + (e.deltaY > 0 ? 5 : -5))));
+   526→  };
+   527→
+   528→  // ── Toast helper ─────────────────────────────────────────────
+   529→  const toast = (msg: string, type: 's' | 'e' | 'i' = 'i') => {
+   530→    const id = Date.now();
+   531→    setToasts(prev => [...prev, { id, msg, type }]);
+   532→    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+   533→  };
+   534→
+   535→  // ── Execute trade ────────────────────────────────────────────
+   536→  const executeTrade = async () => {
+   537→    if (!compId) return;
+   538→    const size = parseFloat(lotSize);
+   539→    if (!size || size <= 0) { toast('Invalid lot size', 'e'); return; }
+   540→    const d = pairData[activePair];
+   541→    if (!d) return;
+   542→    const cfg = PAIRS[activePair];
+   543→    const margin = (size * cfg.ls * d.cp) / leverage;
+   544→    if (margin > balanceRef.current) { toast('Insufficient margin', 'e'); return; }
+   545→
+   546→    // Create position locally
+   547→    const pos = {
+   548→      id: Date.now().toString(),
+   549→      pair: activePair,
+   550→      side: side === 'buy' ? 'Long' : 'Short',
+   551→      size,
+   552→      entry: d.cp,
+   553→      mark: d.cp,
+   554→      pnl: 0,
+   555→      leverage,
+   556→      time: new Date().toISOString(),
+   557→    };
+   558→    positionsRef.current = [...positionsRef.current, pos];
+   559→    setPositions([...positionsRef.current]);
+   560→
+   561→    // Save to DB and use real trade ID
+   562→    try {
+   563→      const tr = await fetch('/api/trades', {
+   564→        method: 'POST',
+   565→        headers: { 'Content-Type': 'application/json' },
+   566→        body: JSON.stringify({
+   567→          competitorId: myId, competitionId: compId,
+   568→          pair: activePair, direction: side === 'buy' ? 'long' : 'short', lotSize: size,
+   569→        }),
+   570→      });
+   571→      const trData = await tr.json();
+   572→      if (trData.id) pos.id = trData.id;
+   573→    } catch { /* silent */ }
+   574→
+   575→    toast(`${side === 'buy' ? 'Bought' : 'Sold'} ${size} ${activePair} @ ${fp(d.cp, cfg.d)}`, 's');
+   576→  };
+   577→
+   578→  // ── Close position ───────────────────────────────────────────
+   579→  const closePosition = async (idx: number) => {
+   580→    const p = positionsRef.current[idx];
+   581→    if (!p) return;
+   582→    balanceRef.current += p.pnl;
+   583→    setBalance(balanceRef.current);
+   584→    setHistory(prev => [{ ...p, exit: p.mark, time: new Date().toISOString() }, ...prev]);
+   585→    positionsRef.current.splice(idx, 1);
+   586→    setPositions([...positionsRef.current]);
+   587→    toast(`Closed ${p.pair} ${p.side} — P&L: ${fmt$(p.pnl)}`, p.pnl >= 0 ? 's' : 'e');
+   588→
+   589→    // Sync close to DB
+   590→    try {
+   591→      await fetch('/api/trades', {
+   592→        method: 'PATCH',
+   593→        headers: { 'Content-Type': 'application/json' },
+   594→        body: JSON.stringify({ tradeId: p.id, competitorId: myId }),
+   595→      });
+   596→    } catch { /* silent */ }
+   597→  };
+   598→
+   599→  const cfg = PAIRS[activePair];
+   600→  const pd = pairData[activePair];
+   601→  const chClass = pd && pd.ch >= 0 ? 'up' : 'dn';
+   602→  const chColor = pd && pd.ch >= 0 ? '#00e87b' : '#ff3b5c';
+   603→  const chBg = pd && pd.ch >= 0 ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)';
+   604→
+   605→  // ═══════════════════════════════════════════════════════════
+   606→  //  RENDER
+   607→  // ═══════════════════════════════════════════════════════════
+   608→  return (
+   609→    <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
+   610→      {/* ── Header ──────────────────────────────────────────── */}
+   611→      <header className="flex items-center px-3 h-12 border-b shrink-0 gap-1.5" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+   612→        <div className="flex items-center gap-1.5 mr-3">
+   613→          <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
+   614→            <Zap size={12} style={{ color: '#07070c' }} />
+   615→          </div>
+   616→          <span className="text-sm font-bold tracking-tight">ForexRush</span>
+   617→        </div>
+   618→        <div className="h-6 w-px mx-1" style={{ background: '#282840' }} />
+   619→        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: '#13131d', border: '1px solid #282840' }}>
+   620→          <span className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>Balance</span>
+   621→          <span className="text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtBal(balance)}</span>
+   622→        </div>
+   623→        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: '#13131d', border: '1px solid #282840' }}>
+   624→          <span className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>P&L</span>
+   625→          <span className="text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(totalPnl)}</span>
+   626→        </div>
+   627→        <div className="h-6 w-px mx-1" style={{ background: '#282840' }} />
+   628→        {/* View toggle */}
+   629→        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #282840' }}>
+   630→          <button onClick={() => setViewMode('arena')} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+   631→            style={{ background: viewMode === 'arena' ? '#c8f542' : 'transparent', color: viewMode === 'arena' ? '#07070c' : '#505068' }}>
+   632→            <BarChart3 size={10} /> Arena
+   633→          </button>
+   634→          <button onClick={() => setViewMode('lounge')} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+   635→            style={{ background: viewMode === 'lounge' ? '#c8f542' : 'transparent', color: viewMode === 'lounge' ? '#07070c' : '#505068' }}>
+   636→            <Sofa size={10} /> Lounge
+   637→          </button>
+   638→        </div>
+   639→        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg ml-auto" style={{ background: '#13131d', border: '1px solid #282840' }}>
+   640→          <span className="text-[10px] uppercase tracking-wider" style={{ color: '#505068' }}>LIVE</span>
+   641→          <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
+   642→        </div>
+   643→        <div className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold cursor-pointer" style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
+   644→          {myName.slice(0, 2).toUpperCase()}
+   645→        </div>
+   646→        <button onClick={onLogout} className="h-7 px-2.5 rounded-lg text-[10px] font-semibold cursor-pointer border-none ml-1" style={{ background: '#1a1a28', color: '#505068' }} title="Sign out">✕</button>
+   647→      </header>
+   648→
+   649→      {/* ═══ Arena view ═══ */}
+   650→      {viewMode === 'arena' && (<>
+   651→      <div className="flex-1 grid overflow-hidden" style={{ gridTemplateColumns: '1fr 320px' }}>
+   652→        {/* Chart section */}
+   653→        <section className="flex flex-col overflow-hidden min-w-0">
+   654→          {/* Toolbar */}
+   655→          <div className="flex items-center gap-1 px-2.5 py-1.5 border-b shrink-0 flex-wrap" style={{ borderColor: '#282840' }}>
+   656→            {/* Pair selector */}
+   657→            <select value={activePair} onChange={e => setActivePair(e.target.value)}
+   658→              className="h-7 px-2 rounded-md text-xs font-semibold outline-none cursor-pointer"
+   659→              style={{ background: '#13131d', border: '1px solid #282840', color: '#ededf4' }}>
+   660→              {Object.entries(PAIRS).map(([s, c]) => <option key={s} value={s}>{s}</option>)}
+   661→            </select>
+   662→            {pd && (
+   663→              <>
+   664→                <span className="text-[11px] tabular-nums ml-1" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{fp(pd.cp, cfg.d)}</span>
+   665→                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ color: chColor, background: chBg }}>
+   666→                  {pd.ch >= 0 ? '+' : ''}{pd.ch.toFixed(2)}%
+   667→                </span>
+   668→              </>
+   669→            )}
+   670→            <div className="h-5 w-px mx-1" style={{ background: '#282840' }} />
+   671→            <div className="flex items-center gap-2">
+   672→              {['1m', '5m', '15m', '1H', '4H', '1D'].map(tf => (
+   673→                <button key={tf} className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors duration-150 ${tf === '15m' ? '' : ''}`}
+   674→                  style={{ color: tf === '15m' ? '#ededf4' : '#505068', background: tf === '15m' ? '#1a1a28' : 'transparent', border: 'none', cursor: 'pointer' }}>
+   675→                  {tf}
+   676→                </button>
+   677→              ))}
+   678→            </div>
+   679→          </div>
+   680→
+   681→          {/* Canvas */}
+   682→          <div ref={wrapRef} className="flex-1 relative min-h-0" style={{ background: '#07070c' }}>
+   683→            <canvas ref={canvasRef} onMouseMove={onCanvasMove} onMouseDown={onCanvasDown} onMouseUp={onCanvasUp} onMouseLeave={onCanvasLeave} onWheel={onWheel} className="absolute inset-0" />
+   684→          </div>
+   685→        </section>
+   686→
+   687→        {/* ── Sidebar ───────────────────────────────────────── */}
+   688→        <aside className="flex flex-col overflow-hidden border-l" style={{ borderColor: '#282840', background: '#0d0d14' }}>
+   689→          {/* PnL summary */}
+   690→          <div className="px-3.5 py-2.5 border-b" style={{ background: 'linear-gradient(135deg, rgba(200,245,66,.03), rgba(0,232,123,.02))', borderColor: '#282840' }}>
+   691→            <div className="text-center text-lg font-bold tabular-nums py-1" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+   692→              {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}
+   693→            </div>
+   694→            <div className="flex justify-between text-[11px] py-0.5">
+   695→              <span style={{ color: '#505068' }}>Open Positions</span>
+   696→              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{positions.length}</span>
+   697→            </div>
+   698→            <div className="flex justify-between text-[11px] py-0.5">
+   699→              <span style={{ color: '#505068' }}>Available Margin</span>
+   700→              <span className="tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{fmtBal(balance)}</span>
+   701→            </div>
+   702→          </div>
+   703→
+   704→          {/* Trading panel */}
+   705→          <div className="px-3.5 py-3 border-b" style={{ borderColor: '#282840' }}>
+   706→            {/* Buy/Sell toggle */}
+   707→            <div className="grid grid-cols-2 gap-0.5 mb-3 p-0.5 rounded-lg" style={{ background: '#1a1a28' }}>
+   708→              <button onClick={() => setSide('buy')} className="py-1.5 rounded-md text-xs font-semibold transition-all duration-150 border-none cursor-pointer"
+   709→                style={{ background: side === 'buy' ? '#00e87b' : 'transparent', color: side === 'buy' ? '#0a0a0f' : '#505068', boxShadow: side === 'buy' ? '0 3px 12px rgba(0,232,123,.2)' : 'none' }}>
+   710→                Buy / Long
+   711→              </button>
+   712→              <button onClick={() => setSide('sell')} className="py-1.5 rounded-md text-xs font-semibold transition-all duration-150 border-none cursor-pointer"
+   713→                style={{ background: side === 'sell' ? '#ff3b5c' : 'transparent', color: side === 'sell' ? '#fff' : '#505068', boxShadow: side === 'sell' ? '0 3px 12px rgba(255,59,92,.2)' : 'none' }}>
+   714→                Sell / Short
+   715→              </button>
+   716→            </div>
+   717→
+   718→            {/* Lot size */}
+   719→            <div className="mb-2.5">
+   720→              <div className="flex justify-between text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>
+   721→                <span>Size (Lots)</span>
+   722→                <span className="tabular-nums normal-case" style={{ color: '#8585a0', fontFamily: "'JetBrains Mono', monospace" }}>$0.00</span>
+   723→              </div>
+   724→              <input type="number" value={lotSize} onChange={e => setLotSize(e.target.value)} step="0.01" placeholder="0.00"
+   725→                className="w-full h-9 px-2.5 rounded-lg text-sm outline-none tabular-nums"
+   726→                style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4', fontFamily: "'JetBrains Mono', monospace" }} />
+   727→              <div className="grid grid-cols-4 gap-0.5 mt-1.5">
+   728→                {[25, 50, 75, 100].map(pct => (
+   729→                  <button key={pct} onClick={() => setLotSize('1.00')} className="py-1 rounded text-[10px] font-semibold transition-all duration-150 border-none cursor-pointer"
+   730→                    style={{ background: '#1a1a28', border: '1px solid #282840', color: '#8585a0' }}>
+   731→                    {pct}%
+   732→                  </button>
+   733→                ))}
+   734→              </div>
+   735→            </div>
+   736→
+   737→            {/* Leverage */}
+   738→            <div className="mb-3">
+   739→              <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>Leverage</div>
+   740→              <div className="flex gap-0.5 flex-wrap">
+   741→                {[1, 2, 5, 10, 25, 50].map(lv => (
+   742→                  <button key={lv} onClick={() => setLeverage(lv)} className="px-2.5 py-1 rounded text-[11px] font-semibold transition-all duration-150 border-none cursor-pointer"
+   743→                    style={{ background: leverage === lv ? 'rgba(200,245,66,.1)' : '#1a1a28', border: leverage === lv ? '1px solid rgba(200,245,66,.3)' : '1px solid #282840', color: leverage === lv ? '#c8f542' : '#8585a0' }}>
+   744→                    {lv}x
+   745→                  </button>
+   746→                ))}
+   747→              </div>
+   748→            </div>
+   749→
+   750→            {/* Execute button */}
+   751→            <button onClick={executeTrade}
+   752→              className="w-full h-10 rounded-lg text-sm font-bold transition-all duration-200 border-none cursor-pointer"
+   753→              style={{ background: side === 'buy' ? '#00e87b' : '#ff3b5c', color: side === 'buy' ? '#0a0a0f' : '#fff' }}>
+   754→              {side === 'buy' ? 'Buy / Long' : 'Sell / Short'} {activePair}
+   755→            </button>
+   756→          </div>
+   757→
+   758→          {/* Order book */}
+   759→          <div className="flex-1 flex flex-col overflow-hidden">
+   760→            <div className="flex justify-between items-center px-3 py-2 border-b text-[11px] font-semibold" style={{ borderColor: '#282840' }}>
+   761→              <span>Order Book</span>
+   762→              <span style={{ color: '#505068', fontSize: '10px' }}>{activePair}</span>
+   763→            </div>
+   764→            <div className="grid grid-cols-3 text-[9px] uppercase tracking-wider px-3 py-1 border-b" style={{ color: '#505068', borderColor: '#1e1e30' }}>
+   765→              <span>Price</span><span className="text-right">Amount</span><span className="text-right">Total</span>
+   766→            </div>
+   767→            <div className="flex-1 overflow-y-auto">
+   768→              {/* Asks (sells) */}
+   769→              {Array.from({ length: 8 }).map((_, i) => {
+   770→                const base = pd?.cp || cfg.p;
+   771→                const askP = base + cfg.sp / 2 + (i + 1) * cfg.sp * (0.5 + Math.random() * 2);
+   772→                const amt = (Math.random() * 1.5 + 0.05).toFixed(cfg.d);
+   773→                return (
+   774→                  <div key={`a${i}`} className="grid grid-cols-3 px-3 py-0.5 text-[10px] relative cursor-pointer transition-colors duration-75 hover:bg-[#1a1a28]"
+   775→                    style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+   776→                    <div className="absolute right-0 top-0 bottom-0 opacity-[0.07]" style={{ background: '#ff3b5c', width: `${30 + Math.random() * 60}%` }} />
+   777→                    <span className="relative" style={{ color: '#ff3b5c' }}>{fp(askP, cfg.d)}</span>
+   778→                    <span className="relative text-right" style={{ color: '#8585a0' }}>{amt}</span>
+   779→                    <span className="relative text-right" style={{ color: '#8585a0' }}>{(parseFloat(amt) * (i + 1)).toFixed(cfg.d)}</span>
+   780→                  </div>
+   781→                );
+   782→              })}
+   783→              {/* Spread */}
+   784→              <div className="text-center py-1 border-y text-[10px]" style={{ borderColor: '#282840', background: '#1a1a28', color: '#505068' }}>
+   785→                Spread <span className="tabular-nums" style={{ color: '#8585a0' }}>{fp(cfg.sp, cfg.d)}</span>
+   786→              </div>
+   787→              {/* Bids (buys) */}
+   788→              {Array.from({ length: 8 }).map((_, i) => {
+   789→                const base = pd?.cp || cfg.p;
+   790→                const bidP = base - cfg.sp / 2 - (i + 1) * cfg.sp * (0.5 + Math.random() * 2);
+   791→                const amt = (Math.random() * 1.5 + 0.05).toFixed(cfg.d);
+   792→                return (
+   793→                  <div key={`b${i}`} className="grid grid-cols-3 px-3 py-0.5 text-[10px] relative cursor-pointer transition-colors duration-75 hover:bg-[#1a1a28]"
+   794→                    style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+   795→                    <div className="absolute right-0 top-0 bottom-0 opacity-[0.07]" style={{ background: '#00e87b', width: `${30 + Math.random() * 60}%` }} />
+   796→                    <span className="relative" style={{ color: '#00e87b' }}>{fp(bidP, cfg.d)}</span>
+   797→                    <span className="relative text-right" style={{ color: '#8585a0' }}>{amt}</span>
+   798→                    <span className="relative text-right" style={{ color: '#8585a0' }}>{(parseFloat(amt) * (i + 1)).toFixed(cfg.d)}</span>
+   799→                  </div>
+   800→                );
+   801→              })}
+   802→            </div>
+   803→          </div>
+   804→        </aside>
+   805→      </div>
+   806→
+   807→      {/* ── Bottom panel ────────────────────────────────────── */}
+   808→      <div className="h-52 border-t flex flex-col shrink-0" style={{ borderColor: '#282840', background: '#0d0d14' }}>
+   809→        <div className="flex border-b shrink-0" style={{ borderColor: '#282840' }}>
+   810→          {(['positions', 'leaderboard', 'history'] as const).map(tab => (
+   811→            <button key={tab} onClick={() => setBottomTab(tab)}
+   812→              className="px-4 py-2 text-[11px] font-medium border-none cursor-pointer transition-colors duration-150"
+   813→              style={{ color: bottomTab === tab ? '#ededf4' : '#505068', background: 'transparent', borderBottom: bottomTab === tab ? '2px solid #c8f542' : '2px solid transparent' }}>
+   814→              {tab === 'positions' ? `Positions (${positions.length})` : tab === 'leaderboard' ? 'Leaderboard' : 'Trade History'}
+   815→            </button>
+   816→          ))}
+   817→        </div>
+   818→        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+   819→          {/* Positions tab */}
+   820→          {bottomTab === 'positions' && (
+   821→            positions.length === 0 ? (
+   822→              <div className="flex flex-col items-center justify-center h-full gap-1.5" style={{ color: '#505068', fontSize: '12px' }}>
+   823→                <span style={{ fontSize: '24px', opacity: 0.4 }}>&#x2197;</span>
+   824→                <span>No open positions</span>
+   825→              </div>
+   826→            ) : (
+   827→              <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+   828→                <thead><tr>
+   829→                  {['Pair', 'Side', 'Size', 'Entry', 'Mark', 'P&L ($)', ''].map(h => (
+   830→                    <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-[10px] sticky top-0" style={{ color: '#505068', background: '#0d0d14', borderBottom: '1px solid #282840' }}>{h}</th>
+   831→                  ))}
+   832→                </tr></thead>
+   833→                <tbody>
+   834→                  {positions.map((p, i) => (
+   835→                    <tr key={p.id} className="transition-colors duration-75" style={{ borderBottom: '1px solid #1e1e30' }}
+   836→                      onMouseEnter={e => (e.currentTarget.style.background = '#1a1a28')}
+   837→                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+   838→                      <td className="px-3 py-2 font-semibold">{p.pair}</td>
+   839→                      <td className="px-3 py-2">
+   840→                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: p.side === 'Long' ? '#00e87b' : '#ff3b5c', background: p.side === 'Long' ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)' }}>
+   841→                          {p.side}
+   842→                        </span>
+   843→                      </td>
+   844→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{p.size.toFixed(2)}</td>
+   845→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(p.entry, PAIRS[p.pair]?.d)}</td>
+   846→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(p.mark, PAIRS[p.pair]?.d)}</td>
+   847→                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: p.pnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(p.pnl)}</td>
+   848→                      <td className="px-3 py-2">
+   849→                        <button onClick={() => closePosition(i)} className="px-2 py-0.5 rounded text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+   850→                          style={{ background: '#13131d', border: '1px solid #282840', color: '#8585a0' }}>
+   851→                          Close
+   852→                        </button>
+   853→                      </td>
+   854→                    </tr>
+   855→                  ))}
+   856→                </tbody>
+   857→              </table>
+   858→            )
+   859→          )}
+   860→
+   861→          {/* Leaderboard tab */}
+   862→          {bottomTab === 'leaderboard' && (
+   863→            <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+   864→              <thead><tr>
+   865→                {['Rank', 'Trader', 'P&L', 'Win Rate', 'Trades'].map(h => (
+   866→                  <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-[10px] sticky top-0" style={{ color: '#505068', background: '#0d0d14', borderBottom: '1px solid #282840' }}>{h}</th>
+   867→                ))}
+   868→              </tr></thead>
+   869→              <tbody>
+   870→                {leaderboard.map((c, i) => {
+   871→                  const isMe = c.displayName === myName || c.username === myName;
+   872→                  return (
+   873→                    <tr key={c.id} className="transition-colors duration-75" style={{ borderBottom: '1px solid #1e1e30', background: isMe ? 'rgba(200,245,66,.05)' : 'transparent' }}
+   874→                      onMouseEnter={e => (e.currentTarget.style.background = '#1a1a28')}
+   875→                      onMouseLeave={e => (e.currentTarget.style.background = isMe ? 'rgba(200,245,66,.05)' : 'transparent')}>
+   876→                      <td className="px-3 py-2">
+   877→                        <span className="inline-flex items-center justify-center h-5 w-5 rounded text-[10px] font-bold" style={{
+   878→                          background: i === 0 ? 'linear-gradient(135deg,#ffd84d,#f5a623)' : i === 1 ? 'linear-gradient(135deg,#c0c0c0,#888)' : i === 2 ? 'linear-gradient(135deg,#cd7f32,#a0522d)' : '#1a1a28',
+   879→                          color: i < 3 ? '#1a1a26' : '#505068',
+   880→                        }}>{i + 1}</span>
+   881→                      </td>
+   882→                      <td className="px-3 py-2 font-semibold text-xs">{c.displayName || c.username} {isMe && <span className="text-[9px] px-1 py-0 rounded font-bold ml-1" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>}</td>
+   883→                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(c.totalPnl)}</td>
+   884→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.winRate >= 50 ? '#00e87b' : '#ff3b5c' }}>{c.winRate.toFixed(1)}%</td>
+   885→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{c.totalTrades}</td>
+   886→                    </tr>
+   887→                  );
+   888→                })}
+   889→              </tbody>
+   890→            </table>
+   891→          )}
+   892→
+   893→          {/* History tab */}
+   894→          {bottomTab === 'history' && (
+   895→            history.length === 0 ? (
+   896→              <div className="flex flex-col items-center justify-center h-full gap-1.5" style={{ color: '#505068', fontSize: '12px' }}>
+   897→                <span>No trade history yet</span>
+   898→              </div>
+   899→            ) : (
+   900→              <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+   901→                <thead><tr>
+   902→                  {['Time', 'Pair', 'Side', 'Size', 'Entry', 'Exit', 'P&L'].map(h => (
+   903→                    <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-[10px] sticky top-0" style={{ color: '#505068', background: '#0d0d14', borderBottom: '1px solid #282840' }}>{h}</th>
+   904→                  ))}
+   905→                </tr></thead>
+   906→                <tbody>
+   907→                  {history.map((h, i) => (
+   908→                    <tr key={i} className="transition-colors duration-75" style={{ borderBottom: '1px solid #1e1e30' }}
+   909→                      onMouseEnter={e => (e.currentTarget.style.background = '#1a1a28')}
+   910→                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+   911→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{new Date(h.time).toLocaleTimeString()}</td>
+   912→                      <td className="px-3 py-2 font-semibold">{h.pair}</td>
+   913→                      <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: h.side === 'Long' ? '#00e87b' : '#ff3b5c', background: h.side === 'Long' ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)' }}>{h.side}</span></td>
+   914→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{h.size.toFixed(2)}</td>
+   915→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(h.entry, PAIRS[h.pair]?.d)}</td>
+   916→                      <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(h.exit, PAIRS[h.pair]?.d)}</td>
+   917→                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: h.pnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(h.pnl)}</td>
+   918→                    </tr>
+   919→                  ))}
+   920→                </tbody>
+   921→              </table>
+   922→            )
+   923→          )}
+   924→        </div>
+   925→      </div>
+   926→      </>)}
+   927→
+   928→      {/* ═══ Lounge view ═══ */}
+   929→      {viewMode === 'lounge' && (
+   930→        <div className="flex-1 overflow-y-auto" style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(200,245,66,.04) 0%, transparent 60%)' }}>
+   931→          <div className="max-w-3xl mx-auto px-4 py-6">
+   932→            {/* Podium */}
+   933→            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+   934→              <div className="flex items-center gap-2 mb-5">
+   935→                <Crown size={16} style={{ color: '#ffd84d' }} />
+   936→                <h2 className="text-lg font-bold tracking-tight">Top Traders</h2>
+   937→              </div>
+   938→              <div className="grid grid-cols-3 gap-3">
+   939→                {[1, 0, 2].map((podIdx) => {
+   940→                  const c = leaderboard[podIdx];
+   941→                  if (!c) return <div key={podIdx} />;
+   942→                  const isFirst = podIdx === 0;
+   943→                  const heights = ['pt-6', '', 'pt-8'];
+   944→                  const medals = ['linear-gradient(135deg,#ffd84d,#f5a623)', 'linear-gradient(135deg,#c0c0c0,#888)', 'linear-gradient(135deg,#cd7f32,#a0522d)'];
+   945→                  const icons = [<Crown key="c" size={14} />, <Medal key="m" size={14} />, <Medal key="m2" size={14} />];
+   946→                  const isMe = c.displayName === myName || c.username === myName;
+   947→                  return (
+   948→                    <motion.div key={c.id} initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: podIdx === 0 ? 0.15 : podIdx === 1 ? 0 : 0.1 }}
+   949→                      className={`rounded-xl p-4 text-center border ${heights[podIdx]}`}
+   950→                      style={{
+   951→                        background: isMe ? 'rgba(200,245,66,.06)' : '#0d0d14',
+   952→                        borderColor: isMe ? 'rgba(200,245,66,.3)' : '#282840',
+   953→                        boxShadow: isFirst ? '0 0 40px rgba(255,216,77,.08)' : 'none',
+   954→                        order: podIdx,
+   955→                      }}>
+   956→                      {/* Avatar */}
+   957→                      <div className="mx-auto mb-2 h-12 w-12 rounded-full flex items-center justify-center text-sm font-bold"
+   958→                        style={{ background: medals[podIdx], color: '#1a1a26' }}>
+   959→                        {(c.displayName || c.username).slice(0, 2).toUpperCase()}
+   960→                      </div>
+   961→                      {/* Rank badge */}
+   962→                      <div className="flex items-center justify-center gap-1 mb-1">
+   963→                        {icons[podIdx]}
+   964→                        <span className="text-[10px] font-bold" style={{ color: '#505068' }}>#{podIdx + 1}</span>
+   965→                        {isMe && <span className="text-[8px] px-1 py-0 rounded font-bold" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>}
+   966→                      </div>
+   967→                      <p className="text-xs font-bold mb-0.5 truncate">{c.displayName || c.username}</p>
+   968→                      <p className="text-lg font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+   969→                        {c.totalPnl >= 0 ? '+' : ''}{c.totalPnl >= 1000 ? `$${(c.totalPnl / 1000).toFixed(1)}K` : `$${c.totalPnl.toFixed(0)}`}
+   970→                      </p>
+   971→                      <p className="text-[10px] tabular-nums mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>ROI {c.roi}%</p>
+   972→                    </motion.div>
+   973→                  );
+   974→                })}
+   975→              </div>
+   976→            </motion.div>
+   977→
+   978→            {/* My rank card */}
+   979→            {(() => {
+   980→              const me = leaderboard.find(c => c.displayName === myName || c.username === myName);
+   981→              if (!me) return null;
+   982→              return (
+   983→                <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
+   984→                  className="rounded-xl p-4 mb-6 border flex items-center gap-4"
+   985→                  style={{ background: 'rgba(200,245,66,.06)', borderColor: 'rgba(200,245,66,.25)' }}>
+   986→                  <div className="h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+   987→                    style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
+   988→                    {myName.slice(0, 2).toUpperCase()}
+   989→                  </div>
+   990→                  <div className="flex-1 min-w-0">
+   991→                    <div className="flex items-center gap-2 mb-0.5">
+   992→                      <span className="text-sm font-bold truncate">{me.displayName || me.username}</span>
+   993→                      <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>
+   994→                    </div>
+   995→                    <div className="flex gap-4 text-[11px]">
+   996→                      <span style={{ color: '#505068' }}>Rank <b style={{ color: '#ededf4' }}>#{me.rank || leaderboard.indexOf(me) + 1}</b></span>
+   997→                      <span style={{ color: '#505068' }}>Balance <b className="tabular-nums" style={{ color: '#ededf4', fontFamily: "'JetBrains Mono', monospace" }}>${me.currentBalance?.toLocaleString() || '10,000'}</b></span>
+   998→                      <span style={{ color: '#505068' }}>Trades <b style={{ color: '#ededf4' }}>{me.totalTrades}</b></span>
+   999→                      <span style={{ color: '#505068' }}>Win Rate <b className="tabular-nums" style={{ color: me.winRate >= 50 ? '#00e87b' : '#ff3b5c', fontFamily: "'JetBrains Mono', monospace" }}>{me.winRate.toFixed(1)}%</b></span>
+  1000→                    </div>
+  1001→                  </div>
+  1002→                  <div className="text-right shrink-0">
+  1003→                    <p className="text-lg font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: me.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+  1004→                      {me.totalPnl >= 0 ? '+' : ''}{fmt$(me.totalPnl)}
+  1005→                    </p>
+  1006→                    <p className="text-[10px] tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>ROI {me.roi}%</p>
+  1007→                  </div>
+  1008→                </motion.div>
+  1009→              );
+  1010→            })()}
+  1011→
+  1012→            {/* Full leaderboard table */}
+  1013→            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+  1014→              <div className="flex items-center gap-2 mb-3">
+  1015→                <Trophy size={14} style={{ color: '#c8f542' }} />
+  1016→                <h3 className="text-sm font-bold">All Rankings</h3>
+  1017→                <span className="text-[10px] ml-auto" style={{ color: '#505068' }}>{leaderboard.length} traders</span>
+  1018→              </div>
+  1019→              <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#282840', background: '#0d0d14' }}>
+  1020→                <table className="w-full text-[12px]" style={{ borderCollapse: 'collapse' }}>
+  1021→                  <thead>
+  1022→                    <tr style={{ background: '#13131d' }}>
+  1023→                      {['#', 'Trader', 'Balance', 'P&L', 'ROI', 'Win Rate', 'Trades'].map(h => (
+  1024→                        <th key={h} className="px-4 py-2.5 text-left font-medium uppercase tracking-wider text-[10px]" style={{ color: '#505068' }}>{h}</th>
+  1025→                      ))}
+  1026→                    </tr>
+  1027→                  </thead>
+  1028→                  <tbody>
+  1029→                    {leaderboard.map((c, i) => {
+  1030→                      const isMe = c.displayName === myName || c.username === myName;
+  1031→                      return (
+  1032→                        <tr key={c.id} className="transition-colors duration-75"
+  1033→                          style={{ borderBottom: '1px solid #1e1e30', background: isMe ? 'rgba(200,245,66,.06)' : 'transparent' }}
+  1034→                          onMouseEnter={e => { if (!isMe) e.currentTarget.style.background = '#1a1a28'; }}
+  1035→                          onMouseLeave={e => { e.currentTarget.style.background = isMe ? 'rgba(200,245,66,.06)' : 'transparent'; }}>
+  1036→                          <td className="px-4 py-2.5">
+  1037→                            <span className="inline-flex items-center justify-center h-5 w-5 rounded text-[10px] font-bold" style={{
+  1038→                              background: i === 0 ? 'linear-gradient(135deg,#ffd84d,#f5a623)' : i === 1 ? 'linear-gradient(135deg,#c0c0c0,#888)' : i === 2 ? 'linear-gradient(135deg,#cd7f32,#a0522d)' : '#1a1a28',
+  1039→                              color: i < 3 ? '#1a1a26' : '#505068',
+  1040→                            }}>{i + 1}</span>
+  1041→                          </td>
+  1042→                          <td className="px-4 py-2.5">
+  1043→                            <div className="flex items-center gap-2">
+  1044→                              <div className="h-6 w-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
+  1045→                                style={{ background: i < 3 ? ['linear-gradient(135deg,#ffd84d,#f5a623)', 'linear-gradient(135deg,#c0c0c0,#888)', 'linear-gradient(135deg,#cd7f32,#a0522d)'][i] : '#1a1a28', color: i < 3 ? '#1a1a26' : '#505068' }}>
+  1046→                                {(c.displayName || c.username).slice(0, 2).toUpperCase()}
+  1047→                              </div>
+  1048→                              <span className="font-semibold truncate">{c.displayName || c.username}</span>
+  1049→                              {isMe && <span className="text-[8px] px-1 py-0 rounded font-bold shrink-0" style={{ background: '#c8f542', color: '#07070c' }}>YOU</span>}
+  1050→                            </div>
+  1051→                          </td>
+  1052→                          <td className="px-4 py-2.5 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>
+  1053→                            ${c.currentBalance?.toLocaleString() || '10,000'}
+  1054→                          </td>
+  1055→                          <td className="px-4 py-2.5 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+  1056→                            {c.totalPnl >= 0 ? '+' : ''}{fmt$(c.totalPnl)}
+  1057→                          </td>
+  1058→                          <td className="px-4 py-2.5">
+  1059→                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{
+  1060→                              color: parseFloat(c.roi) >= 0 ? '#00e87b' : '#ff3b5c',
+  1061→                              background: parseFloat(c.roi) >= 0 ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)',
+  1062→                            }}>{c.roi}%</span>
+  1063→                          </td>
+  1064→                          <td className="px-4 py-2.5 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: c.winRate >= 50 ? '#00e87b' : '#ff3b5c' }}>
+  1065→                            {c.winRate.toFixed(1)}%
+  1066→                          </td>
+  1067→                          <td className="px-4 py-2.5 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{c.totalTrades}</td>
+  1068→                        </tr>
+  1069→                      );
+  1070→                    })}
+  1071→                  </tbody>
+  1072→                </table>
+  1073→              </div>
+  1074→            </motion.div>
+  1075→
+  1076→            {/* Competition stats footer */}
+  1077→            <div className="grid grid-cols-3 gap-3 mt-6 mb-4">
+  1078→              {[
+  1079→                { label: 'Total Traders', value: leaderboard.length, icon: <Shield size={12} /> },
+  1080→                { label: 'Prize Pool', value: `$${(leaderboard.length * 10).toLocaleString()}`, icon: <Trophy size={12} /> },
+  1081→                { label: '1st Place Prize', value: `${Math.round(leaderboard.length * 10 * 0.5)}%`, icon: <Crown size={12} /> },
+  1082→              ].map(s => (
+  1083→                <div key={s.label} className="rounded-xl p-4 text-center border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+  1084→                  <div className="flex items-center justify-center gap-1.5 mb-1.5" style={{ color: '#505068' }}>
+  1085→                    {s.icon}
+  1086→                    <span className="text-[10px] uppercase tracking-wider">{s.label}</span>
+  1087→                  </div>
+  1088→                  <p className="text-xl font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#c8f542' }}>{s.value}</p>
+  1089→                </div>
+  1090→              ))}
+  1091→            </div>
+  1092→          </div>
+  1093→        </div>
+  1094→      )}
+  1095→      <div className="fixed top-14 right-3 z-[9999] flex flex-col gap-1.5">
+  1096→        <AnimatePresence>
+  1097→          {toasts.map(t => (
+  1098→            <motion.div key={t.id} initial={{ x: 120, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 120, opacity: 0 }}
+  1099→              className="px-4 py-2.5 rounded-lg text-xs flex items-center gap-2 max-w-xs"
+  1100→              style={{
+  1101→                background: t.type === 's' ? 'rgba(0,232,123,.1)' : t.type === 'e' ? 'rgba(255,59,92,.14)' : 'rgba(91,140,255,.1)',
+  1102→                border: `1px solid ${t.type === 's' ? 'rgba(0,232,123,.3)' : t.type === 'e' ? 'rgba(255,59,92,.3)' : 'rgba(91,140,255,.3)'}`,
+  1103→                color: t.type === 's' ? '#66ffb0' : t.type === 'e' ? '#ff8da0' : '#8db4ff',
+  1104→                backdropFilter: 'blur(12px)',
+  1105→              }}>
+  1106→              {t.msg}
+  1107→            </motion.div>
+  1108→          ))}
+  1109→        </AnimatePresence>
+  1110→      </div>
+  1111→    </div>
+  1112→  );
+  1113→}

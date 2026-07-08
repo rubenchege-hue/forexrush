@@ -975,6 +975,103 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
               </div>
             </motion.div>
 
+            {/* Live P&L Session Card */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+              className="rounded-xl p-5 mb-6 border"
+              style={{
+                background: 'linear-gradient(135deg, rgba(200,245,66,.04), rgba(0,232,123,.03))',
+                borderColor: positions.length > 0
+                  ? (totalPnl >= 0 ? 'rgba(0,232,123,.3)' : 'rgba(255,59,92,.3)')
+                  : '#282840',
+                boxShadow: positions.length > 0
+                  ? (totalPnl >= 0 ? '0 0 40px rgba(0,232,123,.06)' : '0 0 40px rgba(255,59,92,.06)')
+                  : 'none',
+              }}>
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 size={14} style={{ color: '#c8f542' }} />
+                <h3 className="text-sm font-bold">Your Live Session</h3>
+                <span className="flex items-center gap-1 ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(0,232,123,.1)', color: '#00e87b' }}>
+                  <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
+                  LIVE
+                </span>
+              </div>
+
+              {/* P&L & Balance Row */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,0,0,.25)', border: '1px solid #1e1e30' }}>
+                  <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>Unrealized P&L</p>
+                  <p className="text-xl font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+                    {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}
+                  </p>
+                </div>
+                <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,0,0,.25)', border: '1px solid #1e1e30' }}>
+                  <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>Equity</p>
+                  <p className="text-xl font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ededf4' }}>
+                    {fmtBal(balance)}
+                  </p>
+                </div>
+                <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,0,0,.25)', border: '1px solid #1e1e30' }}>
+                  <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>Open Positions</p>
+                  <p className="text-xl font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#ededf4' }}>
+                    {positions.length}
+                  </p>
+                </div>
+              </div>
+
+              {/* Open Positions Table */}
+              {positions.length > 0 ? (
+                <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#1e1e30', background: 'rgba(0,0,0,.2)' }}>
+                  <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: '#13131d' }}>
+                        {['Pair', 'Side', 'Size', 'Entry', 'Mark', 'P&L'].map(h => (
+                          <th key={h} className="px-3 py-2 text-left font-medium uppercase tracking-wider text-[9px]" style={{ color: '#505068' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {positions.map((p, i) => (
+                        <tr key={p.id} className="transition-colors duration-75"
+                          style={{ borderBottom: '1px solid #1e1e30' }}>
+                          <td className="px-3 py-2 font-semibold">{p.pair}</td>
+                          <td className="px-3 py-2">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                              style={{ color: p.side === 'Long' ? '#00e87b' : '#ff3b5c', background: p.side === 'Long' ? 'rgba(0,232,123,.1)' : 'rgba(255,59,92,.1)' }}>
+                              {p.side}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{p.size.toFixed(2)}</td>
+                          <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: '#8585a0' }}>{fp(p.entry, PAIRS[p.pair]?.d)}</td>
+                          <td className="px-3 py-2 tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fp(p.mark, PAIRS[p.pair]?.d)}</td>
+                          <td className="px-3 py-2 tabular-nums font-semibold" style={{ fontFamily: "'JetBrains Mono', monospace", color: p.pnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
+                            {fmt$(p.pnl)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="flex items-center justify-between px-3 py-2 border-t" style={{ borderColor: '#1e1e30', background: '#0d0d14' }}>
+                    <span className="text-[10px]" style={{ color: '#505068' }}>Positions update live every 500ms</span>
+                    <button onClick={() => setViewMode('arena')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+                      style={{ background: '#c8f542', color: '#07070c' }}>
+                      <BarChart3 size={10} /> Back to Arena
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg p-6 text-center" style={{ background: 'rgba(0,0,0,.2)', border: '1px dashed #282840' }}>
+                  <p className="text-xs mb-1" style={{ color: '#505068' }}>No open positions</p>
+                  <p className="text-[10px] mb-3" style={{ color: '#383850' }}>Switch to the Arena to place your first trade</p>
+                  <button onClick={() => setViewMode('arena')}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold border-none cursor-pointer transition-all duration-150"
+                    style={{ background: 'rgba(200,245,66,.1)', border: '1px solid rgba(200,245,66,.3)', color: '#c8f542' }}>
+                    <BarChart3 size={12} /> Open Arena
+                  </button>
+                </div>
+              )}
+            </motion.div>
+
             {/* My rank card */}
             {(() => {
               const me = leaderboard.find(c => c.displayName === myName || c.username === myName);
