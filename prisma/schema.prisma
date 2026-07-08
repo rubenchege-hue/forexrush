@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  competitors Competitor[]
+}
+
+model Competition {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  entryFee      Float    @default(10.0)
+  prizePool     Float
+  startDate     DateTime
+  endDate       DateTime
+  status        String   @default("upcoming") // upcoming, active, completed
+  maxParticipants Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  competitors Competitor[]
+  trades      Trade[]
+}
+
+model Competitor {
+  id            String   @id @default(cuid())
+  userId        String?
+  competitionId String
+  username      String
+  avatar        String?
+  initialBalance Float   @default(10000.0)
+  currentBalance Float   @default(10000.0)
+  totalPnl      Float    @default(0.0)
+  totalTrades   Int      @default(0)
+  winRate       Float    @default(0.0)
+  rank          Int?
+  enrolledAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User?       @relation(fields: [userId], references: [id])
+  competition Competition @relation(fields: [competitionId], references: [id])
+  trades      Trade[]
+
+  @@unique([competitionId, username])
+}
+
+model Trade {
+  id            String   @id @default(cuid())
+  competitorId  String
+  competitionId String
+  pair          String   // e.g. "EUR/USD", "GBP/JPY"
+  direction     String   // "long" or "short"
+  lotSize       Float
+  entryPrice    Float
+  exitPrice     Float?
+  pnl           Float    @default(0.0)
+  status        String   @default("open") // "open", "closed", "liquidated"
+  openedAt      DateTime @default(now())
+  closedAt      DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  competitor  Competitor  @relation(fields: [competitorId], references: [id])
+  competition Competition @relation(fields: [competitionId], references: [id])
+}
