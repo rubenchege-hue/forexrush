@@ -3,23 +3,33 @@ import { db } from '@/lib/db';
 
 // Simulated forex prices (base rates)
 const FOREX_PRICES: Record<string, number> = {
-  'EUR/USD': 1.0876,
-  'GBP/USD': 1.2734,
-  'USD/JPY': 149.82,
-  'AUD/USD': 0.6543,
-  'USD/CAD': 1.3621,
-  'NZD/USD': 0.6127,
-  'EUR/GBP': 0.8542,
-  'EUR/JPY': 163.01,
-  'GBP/JPY': 190.72,
-  'USD/CHF': 0.8834,
+  'EUR/USD': 1.1455,
+  'GBP/USD': 1.3495,
+  'USD/JPY': 162.33,
+  'AUD/USD': 0.6993,
+  'USD/CAD': 1.4000,
+  'NZD/USD': 0.5848,
+  'EUR/GBP': 0.8488,
+  'EUR/JPY': 185.95,
+  'GBP/JPY': 219.07,
+  'USD/CHF': 0.8080,
+  'BTC/USD': 62907.77,
+  'ETH/USD': 1831.40,
+  'SOL/USD': 74.57,
+  'XRP/USD': 1.0860,
+  'DOGE/USD': 0.0718,
 };
+
+function isCryptoPair(pair: string): boolean {
+  return ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE'].some(c => pair.includes(c));
+}
 
 function getSimulatedPrice(pair: string): number {
   const base = FOREX_PRICES[pair] || 1.0;
-  const volatility = base * 0.0015; // 0.15% volatility
+  const volatility = base * 0.0015;
   const change = (Math.random() - 0.5) * 2 * volatility;
-  return parseFloat((base + change).toFixed(pair.includes('JPY') ? 2 : 4));
+  const decimals = pair.includes('JPY') || isCryptoPair(pair) ? 2 : 4;
+  return parseFloat((base + change).toFixed(decimals));
 }
 
 export async function GET(request: NextRequest) {
@@ -60,7 +70,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { competitorId, competitionId, pair, direction, lotSize } = body;
+    const { competitorId, competitionId, pair, direction, lotSize, entryPrice: clientEntryPrice } = body;
 
     if (!competitorId || !competitionId || !pair || !direction || !lotSize) {
       return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
@@ -74,7 +84,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Competitor not found' }, { status: 404 });
     }
 
-    const entryPrice = getSimulatedPrice(pair);
+    let entryPrice: number;
+    if (clientEntryPrice !== undefined) {
+      const price = parseFloat(clientEntryPrice);
+      if (isNaN(price) || price <= 0) {
+        return NextResponse.json({ error: 'Invalid entry price' }, { status: 400 });
+      }
+      entryPrice = price;
+    } else {
+      entryPrice = getSimulatedPrice(pair);
+    }
 
     const trade = await db.trade.create({
       data: {
@@ -97,7 +116,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tradeId, competitorId } = body;
+    const { tradeId, competitorId, exitPrice: clientExitPrice } = body;
 
     if (!tradeId) {
       return NextResponse.json({ error: 'Trade ID is required' }, { status: 400 });
@@ -112,16 +131,29 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Trade not found or already closed' }, { status: 404 });
     }
 
-    const exitPrice = getSimulatedPrice(trade.pair);
+    let exitPrice: number;
+    if (clientExitPrice !== undefined) {
+      const price = parseFloat(clientExitPrice);
+      if (isNaN(price) || price <= 0) {
+        return NextResponse.json({ error: 'Invalid exit price' }, { status: 400 });
+      }
+      exitPrice = price;
+    } else {
+      exitPrice = getSimulatedPrice(trade.pair);
+    }
 
     // Calculate P&L based on direction
     let pnl: number;
-    const pipValue = trade.pair.includes('JPY') ? 0.01 : 0.0001;
-    const pips = trade.direction === 'long'
-      ? (exitPrice - trade.entryPrice) / pipValue
-      : (trade.entryPrice - exitPrice) / pipValue;
-
-    pnl = parseFloat((pips * trade.lotSize * (trade.pair.includes('JPY') ? 6.67 : 10)).toFixed(2));
+    if (isCryptoPair(trade.pair)) {
+      const dir = trade.direction === 'long' ? 1 : -1;
+      pnl = parseFloat(((exitPrice - trade.entryPrice) * trade.lotSize * dir).toFixed(2));
+    } else {
+      const pipValue = trade.pair.includes('JPY') ? 0.01 : 0.0001;
+      const pips = trade.direction === 'long'
+        ? (exitPrice - trade.entryPrice) / pipValue
+        : (trade.entryPrice - exitPrice) / pipValue;
+      pnl = parseFloat((pips * trade.lotSize * (trade.pair.includes('JPY') ? 6.67 : 10)).toFixed(2));
+    }
 
     const updatedTrade = await db.trade.update({
       where: { id: tradeId },

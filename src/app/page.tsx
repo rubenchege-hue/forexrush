@@ -6,57 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Key, Lock, CheckCircle2, XCircle, Eye, EyeOff, Zap, Trophy, Shield, Crown, Medal, BarChart3, Sofa } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-// ═══════════════════════════════════════════════════════════════
-//  TYPES
-// ═══════════════════════════════════════════════════════════════
-interface Comp { id: string; title: string; status: string; endDate: string; _count: { competitors: number }; prizePool: number; }
-interface LbEntry { id: string; username: string; displayName?: string; avatar: string | null; totalPnl: number; totalTrades: number; winRate: number; rank: number; roi: string; currentBalance?: number; }
-interface Trade { id: string; pair: string; direction: string; lotSize: number; entryPrice: number; exitPrice: number | null; pnl: number; status: string; openedAt: string; competitor?: { username: string }; }
-
-// ═══════════════════════════════════════════════════════════════
-//  PAIR CONFIG (from Bullrush)
-// ═══════════════════════════════════════════════════════════════
-const PAIRS: Record<string, { g: string; f: string; p: number; vol: number; pip: number; d: number; ls: number; sp: number; }> = {
-  'EUR/USD': { g:'Forex Majors', f:'Euro / US Dollar', p:1.08470, vol:.00025, pip:.0001, d:5, ls:100000, sp:.00012 },
-  'GBP/USD': { g:'Forex Majors', f:'British Pound / US Dollar', p:1.27150, vol:.00030, pip:.0001, d:5, ls:100000, sp:.00015 },
-  'USD/JPY': { g:'Forex Majors', f:'US Dollar / Japanese Yen', p:155.320, vol:.035, pip:.01, d:3, ls:100000, sp:.015 },
-  'AUD/USD': { g:'Forex Majors', f:'Australian Dollar / US Dollar', p:0.65480, vol:.00020, pip:.0001, d:5, ls:100000, sp:.00014 },
-  'NZD/USD': { g:'Forex Majors', f:'New Zealand Dollar / US Dollar', p:0.60120, vol:.00018, pip:.0001, d:5, ls:100000, sp:.00016 },
-  'USD/CAD': { g:'Forex Majors', f:'US Dollar / Canadian Dollar', p:1.37250, vol:.00025, pip:.0001, d:5, ls:100000, sp:.00015 },
-  'EUR/GBP': { g:'Forex Crosses', f:'Euro / British Pound', p:.85320, vol:.00018, pip:.0001, d:5, ls:100000, sp:.00018 },
-  'EUR/JPY': { g:'Forex Crosses', f:'Euro / Japanese Yen', p:168.450, vol:.040, pip:.01, d:3, ls:100000, sp:.020 },
-  'GBP/JPY': { g:'Forex Crosses', f:'British Pound / Japanese Yen', p:197.380, vol:.045, pip:.01, d:3, ls:100000, sp:.025 },
-  'USD/CHF': { g:'Forex Majors', f:'US Dollar / Swiss Franc', p:0.88250, vol:.00022, pip:.0001, d:5, ls:100000, sp:.00012 },
-  'BTC/USD': { g:'Crypto', f:'Bitcoin', p:67432.18, vol:15, pip:.01, d:2, ls:1, sp:1.5 },
-  'ETH/USD': { g:'Crypto', f:'Ethereum', p:3521.07, vol:2.5, pip:.01, d:2, ls:1, sp:.8 },
-  'SOL/USD': { g:'Crypto', f:'Solana', p:172.44, vol:.8, pip:.01, d:2, ls:1, sp:.15 },
-  'XRP/USD': { g:'Crypto', f:'Ripple', p:.5234, vol:.002, pip:.0001, d:4, ls:1, sp:.0008 },
-  'DOGE/USD': { g:'Crypto', f:'Dogecoin', p:.1642, vol:.001, pip:.0001, d:4, ls:1, sp:.0005 },
-};
-
-const TICKER_PAIRS = [
-  { pair:'EUR/USD', price:1.0876, change:0.12 }, { pair:'GBP/USD', price:1.2734, change:-0.08 },
-  { pair:'USD/JPY', price:149.82, change:0.34 }, { pair:'AUD/USD', price:0.6543, change:-0.21 },
-  { pair:'XAU/USD', price:2342.50, change:1.24 }, { pair:'BTC/USD', price:67842, change:2.15 },
-  { pair:'ETH/USD', price:3521, change:1.05 }, { pair:'SOL/USD', price:172.44, change:-0.45 },
-];
-
-// ═══════════════════════════════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════════════════════════════
-const fp = (p: number, dec?: number) => {
-  const d = dec ?? 5;
-  if (d <= 2 && Math.abs(p) >= 1000) return p.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return p.toFixed(d);
-};
-const ns = (range: number, ticks: number) => {
-  const r = range / ticks, m = Math.pow(10, Math.floor(Math.log10(Math.max(r, 1e-12))));
-  const n = r / m;
-  return Math.max((n <= 1.5 ? 1 : n <= 3.5 ? 2 : n <= 7.5 ? 5 : 10) * m, 1e-12);
-};
-const fmt$ = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2);
-const fmtBal = (v: number) => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+import Link from 'next/link';
+import { Comp, LbEntry, Trade, PAIRS } from '@/lib/constants';
+import { fp, ns, fmt$, fmtBal } from '@/lib/utils';
+import { usePrices } from '@/hooks/usePrices';
 
 // ═══════════════════════════════════════════════════════════════
 //  MAIN PAGE
@@ -80,6 +33,27 @@ export default function Home() {
   // My profile
   const [myName, setMyName] = useState('');
   const [myId, setMyId] = useState('');
+
+  // ── Live ticker (landing page) ────────────────────────────────
+  const [tickerPrices, setTickerPrices] = useState<Record<string, { price: number; change: number }>>({});
+  useEffect(() => {
+    const fetchTicker = async () => {
+      try {
+        const res = await fetch('/api/prices');
+        const data = await res.json();
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+          const entries: Record<string, { price: number; change: number }> = {};
+          for (const [pair, price] of Object.entries(data)) {
+            entries[pair] = { price: price as number, change: 0 };
+          }
+          setTickerPrices(entries as any);
+        }
+      } catch {}
+    };
+    fetchTicker();
+    const iv = setInterval(fetchTicker, 10000);
+    return () => clearInterval(iv);
+  }, []);
 
   // ── Init ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -171,19 +145,25 @@ export default function Home() {
   //  LANDING
   // ═══════════════════════════════════════════════════════════════
   if (phase === 'landing') return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
+    <div className="min-h-screen flex flex-col relative overflow-hidden" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
       {/* Ticker */}
       <div className="overflow-hidden border-b" style={{ borderColor: '#1e1e30' }}>
         <div className="flex animate-ticker whitespace-nowrap py-1 px-4" style={{ background: '#0d0d14' }}>
-          {[...TICKER_PAIRS, ...TICKER_PAIRS].map((t, i) => (
-            <span key={i} className="inline-flex items-center gap-2 mx-5 text-xs">
-              <span style={{ color: '#8585a0' }}>{t.pair}</span>
-              <span className="tabular-nums">{t.price.toFixed(t.pair === 'XAU/USD' ? 2 : 4)}</span>
-              <span className="tabular-nums" style={{ color: t.change >= 0 ? '#00e87b' : '#ff3b5c' }}>
-                {t.change >= 0 ? '+' : ''}{t.change.toFixed(2)}%
+          {(() => {
+            const pairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'];
+            const items = Object.keys(tickerPrices).length > 0
+              ? pairs.map(p => ({ pair: p, ...tickerPrices[p] || { price: 0, change: 0 } }))
+              : pairs.map(p => ({ pair: p, price: PAIRS[p]?.p || 0, change: 0 }));
+            return [...items, ...items].map((t, i) => (
+              <span key={i} className="inline-flex items-center gap-2 mx-5 text-xs">
+                <span style={{ color: '#8585a0' }}>{t.pair}</span>
+                <span className="tabular-nums">{t.price.toFixed(PAIRS[t.pair]?.d || 4)}</span>
+                <span className="tabular-nums" style={{ color: t.change >= 0 ? '#00e87b' : '#ff3b5c' }}>
+                  {t.change >= 0 ? '+' : ''}{t.change.toFixed(2)}%
+                </span>
               </span>
-            </span>
-          ))}
+            ));
+          })()}
         </div>
       </div>
 
@@ -193,14 +173,43 @@ export default function Home() {
             <Zap size={12} style={{ color: '#07070c' }} />
           </div>
           <span className="text-base font-bold tracking-tight">ForexRush</span>
-          {comp && <Badge className="text-[9px] px-1.5 py-0 border" style={{ borderColor: 'rgba(200,245,66,.3)', color: '#c8f542', background: 'transparent' }}>LIVE</Badge>}
+          {comp && <Badge className="text-[9px] px-1.5 py-0 border" style={{ borderColor: 'rgba(200,245,66,.3)', color: '#c8f542', background: 'transparent' }}>{comp.title}</Badge>}
         </div>
         <Button onClick={() => setPhase('landing')} className="text-xs font-semibold h-8 px-4 rounded-lg" style={{ background: '#c8f542', color: '#07070c' }}>
           <Key size={12} className="mr-1.5" /> Redeem Code
         </Button>
       </nav>
 
-      <main className="flex-1 flex items-center justify-center px-4">
+      {/* Floating candlestick background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none hidden sm:block" style={{ top: '3rem', bottom: 0 }}>
+        {[
+          { l:'10%', d:'0s', h:60, b:20, up:true },
+          { l:'25%', d:'3s', h:40, b:15, up:false },
+          { l:'45%', d:'6s', h:50, b:10, up:true },
+          { l:'60%', d:'9s', h:35, b:12, up:false },
+          { l:'75%', d:'5s', h:55, b:18, up:true },
+          { l:'90%', d:'8s', h:45, b:14, up:false },
+          { l:'15%', d:'12s', h:30, b:8, up:true },
+          { l:'55%', d:'15s', h:48, b:16, up:false },
+          { l:'35%', d:'2s', h:38, b:11, up:true },
+          { l:'80%', d:'11s', h:42, b:13, up:false },
+        ].map((c, i) => {
+          const col = c.up ? '#00e87b' : '#ff3b5c';
+          const cls = c.up ? 'animate-candle-1' : 'animate-candle-2';
+          return (
+            <div key={i} className={`absolute ${cls}`} style={{ left:c.l, bottom:'-80px', animationDelay:c.d }}>
+              <svg width="14" height={c.h} viewBox={`0 0 14 ${c.h}`}>
+                <rect x={5} y={0} width={4} height={c.h} fill={col} opacity={0.15} rx={1} />
+                <rect x={5} y={(c.h-c.b)/2} width={4} height={c.b} fill={col} opacity={0.6} rx={1} />
+                <line x1={7} y1={0} x2={7} y2={(c.h-c.b)/2} stroke={col} strokeWidth={1.5} opacity={0.25} />
+                <line x1={7} y1={(c.h+c.b)/2} x2={7} y2={c.h} stroke={col} strokeWidth={1.5} opacity={0.25} />
+              </svg>
+            </div>
+          );
+        })}
+      </div>
+
+      <main className="flex-1 flex items-center justify-center px-4 relative z-10">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
           <div className="text-center mb-6">
             <h1 className="text-3xl font-extrabold tracking-tight mb-2">Enter the Arena.</h1>
@@ -227,7 +236,7 @@ export default function Home() {
               style={{ background: '#c8f542', color: '#07070c' }}>
               {licBusy ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Verify & Continue'}
             </button>
-            <p className="text-[10px] text-center mt-3" style={{ color: '#505068' }}>15 exclusive codes &middot; Single-use &middot; 30-day validity</p>
+            <p className="text-[10px] text-center mt-3" style={{ color: '#505068' }}>200 exclusive codes &middot; Single-use &middot; 30-day validity</p>
           </div>
 
           {/* Prize info */}
@@ -236,7 +245,7 @@ export default function Home() {
               {[
                 { l: 'Traders', v: comp._count.competitors },
                 { l: 'Prize Pool', v: `$${comp._count.competitors * 10}` },
-                { l: '1st Prize', v: '50%' },
+                { l: 'Ends', v: new Date(comp.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) },
               ].map(s => (
                 <div key={s.l} className="rounded-lg p-2 border" style={{ background: '#0d0d14', borderColor: '#1e1e30' }}>
                   <p className="text-base font-bold tabular-nums">{s.v}</p>
@@ -247,6 +256,15 @@ export default function Home() {
           )}
         </motion.div>
       </main>
+
+      {/* Footer */}
+      <footer className="relative z-10 flex items-center justify-center gap-4 px-4 py-4 border-t" style={{ borderColor: '#1e1e30', background: '#0d0d14' }}>
+        <Link href="/terms" className="text-[10px] transition-colors duration-150 hover:underline" style={{ color: '#505068' }}>
+          Terms & Rules
+        </Link>
+        <span className="text-[10px]" style={{ color: '#282840' }}>&middot;</span>
+        <span className="text-[10px]" style={{ color: '#383850' }}>ForexRush &copy; 2026</span>
+      </footer>
     </div>
   );
 
@@ -316,7 +334,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
   const [viewMode, setViewMode] = useState<'arena' | 'lounge'>('arena');
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 's' | 'e' | 'i' }[]>([]);
 
-  // Trading state
+  // Trading state (still needed locally for positions/balance)
   const balanceRef = useRef(10000);
   const [balance, setBalance] = useState(10000);
   const positionsRef = useRef<any[]>([]);
@@ -325,175 +343,22 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
   const [totalPnl, setTotalPnl] = useState(0);
 
   // Chart state
-  const [pairData, setPairData] = useState<Record<string, { cn: any[]; cp: number; ch: number }>>({});
   const [sO, setSO] = useState(0);
   const vc = 80;
   const crosshair = useRef({ x: null as number | null, y: null as number | null });
   const isDrag = useRef(false);
   const dragStartX = useRef(0);
   const dragStartO = useRef(0);
+  const showMA = useRef(true);
+  const maPeriod = 14;
 
-  // ── Real market prices ──────────────────────────────────────
-  const [realPrices, setRealPrices] = useState<Record<string, number>>({});
-  const [marketLive, setMarketLive] = useState(false);
-  const isFirstFetch = useRef(true);
-  const lastWsUpdate = useRef<Record<string, number>>({});
-
-  // ── Generate candle data ─────────────────────────────────────
-  const genCandles = useCallback((n: number, start: number, vol: number) => {
-    const d: any[] = []; let pr = start; const now = Date.now();
-    for (let i = 0; i < n; i++) {
-      const dr = (Math.random() - 0.48) * vol, o = pr, c = o + dr;
-      const h = Math.max(o, c) + Math.random() * vol * 0.8;
-      const l = Math.min(o, c) - Math.random() * vol * 0.8;
-      d.push({ o, h, l, c, v: 50 + Math.random() * 450, t: now - (n - i) * 15 * 60000 });
-      pr = c;
-    }
-    return d;
-  }, []);
-
-  // ── Init pair data ───────────────────────────────────────────
-  useEffect(() => {
-    const pd: Record<string, { cn: any[]; cp: number; ch: number }> = {};
-    for (const [s, c] of Object.entries(PAIRS)) {
-      const cn = genCandles(300, c.p, c.vol);
-      const cp = cn[cn.length - 1].c;
-      pd[s] = { cn, cp, ch: ((cp - cn[0].o) / cn[0].o) * 100 };
-    }
-    setPairData(pd);
-  }, [genCandles]);
-
-  // ── Price tick ───────────────────────────────────────────────
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setPairData(prev => {
-        const next = { ...prev };
-        for (const [s, cfg] of Object.entries(PAIRS)) {
-          if (!next[s]) continue;
-          const cn = [...next[s].cn];
-          const last = cn[cn.length - 1];
-          const drift = (Math.random() - 0.48) * cfg.vol * 0.3;
-          const newC = last.c + drift;
-          const newO = last.c;
-          const h = Math.max(newO, newC) + Math.random() * cfg.vol * 0.15;
-          const l = Math.min(newO, newC) - Math.random() * cfg.vol * 0.15;
-          cn.push({ o: newO, h, l, c: newC, v: 50 + Math.random() * 200, t: Date.now() });
-          if (cn.length > 500) cn.shift();
-          next[s] = { ...next[s], cn, cp: newC, ch: ((newC - cn[0].o) / cn[0].o) * 100 };
-        }
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(iv);
-  }, []);
-
-  // ── Fetch real market prices ────────────────────────────────
-  useEffect(() => {
-    const fetchPrices = async () => {
-      try {
-        const res = await fetch('/api/prices');
-        const data = await res.json();
-        if (data && !data.error && typeof data === 'object' && !Array.isArray(data)) {
-          setRealPrices(data);
-          setMarketLive(true);
-
-          // Apply real prices to pairData
-          setPairData(prev => {
-            const next = { ...prev };
-            for (const [pair, price] of Object.entries(data)) {
-              if (!next[pair]) continue;
-              // After first fetch, only update forex (crypto handled by WebSocket)
-              if (!isFirstFetch.current && PAIRS[pair]?.g === 'Crypto') continue;
-              const cn = [...next[pair].cn];
-              const last = cn[cn.length - 1];
-              const cfg = PAIRS[pair];
-              if (!cfg) continue;
-              const o = last.c;
-              const h = Math.max(o, price) + Math.random() * cfg.vol * 0.2;
-              const l = Math.min(o, price) - Math.random() * cfg.vol * 0.2;
-              cn.push({ o, h, l, c: price, v: 100 + Math.random() * 200, t: Date.now() });
-              if (cn.length > 500) cn.shift();
-              next[pair] = { ...next[pair], cn, cp: price, ch: ((price - cn[0].o) / cn[0].o) * 100 };
-            }
-            return next;
-          });
-          isFirstFetch.current = false;
-        }
-      } catch { /* silent */ }
-    };
-    fetchPrices();
-    const iv = setInterval(fetchPrices, 30000);
-    return () => clearInterval(iv);
-  }, []);
-
-  // ── Binance WebSocket for real-time crypto ───────────────────
-  useEffect(() => {
-    const streams = ['btcusdt@ticker', 'ethusdt@ticker', 'solusdt@ticker', 'xrpusdt@ticker', 'dogeusdt@ticker'];
-    const pairMap: Record<string, string> = {
-      BTCUSDT: 'BTC/USD', ETHUSDT: 'ETH/USD', SOLUSDT: 'SOL/USD',
-      XRPUSDT: 'XRP/USD', DOGEUSDT: 'DOGE/USD',
-    };
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout>;
-
-    const connect = () => {
-      try {
-        ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams.join('/')}`);
-      } catch { return; }
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          const symbol = msg.data?.s;
-          const price = parseFloat(msg.data?.c);
-          if (!symbol || !price) return;
-
-          const mapped = pairMap[symbol];
-          if (!mapped) return;
-
-          // Throttle to ~2 updates/sec per pair
-          const now = Date.now();
-          if (now - (lastWsUpdate.current[mapped] || 0) < 500) return;
-          lastWsUpdate.current[mapped] = now;
-
-          setPairData(prev => {
-            if (!prev[mapped]) return prev;
-            const cn = [...prev[mapped].cn];
-            const last = cn[cn.length - 1];
-            // Update current candle's close/high/low with real price
-            last.c = price;
-            last.h = Math.max(last.h, price);
-            last.l = Math.min(last.l, price);
-            last.v = (last.v || 0) + 10;
-            return {
-              ...prev,
-              [mapped]: { ...prev[mapped], cn, cp: price, ch: ((price - cn[0].o) / cn[0].o) * 100 },
-            };
-          });
-        } catch { /* parse error */ }
-      };
-
-      ws.onclose = () => {
-        reconnectTimer = setTimeout(connect, 5000);
-      };
-      ws.onerror = () => {
-        ws?.close();
-      };
-    };
-
-    connect();
-    return () => {
-      clearTimeout(reconnectTimer);
-      try { ws?.close(); } catch {}
-    };
-  }, []);
+  const { candles, currentPrices, currentChanges, isLive, pairData, connectionStatus } = usePrices();
 
   // ── Update positions P&L ─────────────────────────────────────
   useEffect(() => {
     const iv = setInterval(() => {
-      const pd = pairData;
       positionsRef.current = positionsRef.current.map(p => {
-        const d = pd[p.pair];
+        const d = pairData[p.pair];
         if (!d) return p;
         const cfg = PAIRS[p.pair];
         if (!cfg) return p;
@@ -509,6 +374,18 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
     }, 500);
     return () => clearInterval(iv);
   }, [pairData]);
+
+  // ── Moving average calculation ────────────────────────────────
+  const calcMA = (data: any[], period: number) => {
+    const mas: (number | null)[] = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) { mas.push(null); continue; }
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) sum += data[j].c;
+      mas.push(sum / period);
+    }
+    return mas;
+  };
 
   // ── Canvas chart drawing ─────────────────────────────────────
   const draw = useCallback(() => {
@@ -529,8 +406,10 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
     const cn = d.cn;
     ctx.clearRect(0, 0, cw, ch);
 
-    const paW = cfg.d <= 2 ? 78 : 88, taH = 22;
-    const aW = cw - paW, aH = ch - taH;
+    const paW = cfg.d <= 2 ? 78 : 88;
+    const vH = 50;
+    const aH = ch - vH;
+    const aW = cw - paW;
     if (aW <= 0 || aH <= 0) return;
 
     const vC = Math.min(vc, cn.length);
@@ -539,13 +418,18 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
     const vis = cn.slice(sI, eI);
     if (!vis.length) return;
 
-    let mn = Infinity, mx = -Infinity;
-    vis.forEach((c: any) => { mn = Math.min(mn, c.l); mx = Math.max(mx, c.h); });
+    let mn = Infinity, mx = -Infinity, maxVol = 0;
+    vis.forEach((c: any) => { mn = Math.min(mn, c.l); mx = Math.max(mx, c.h); maxVol = Math.max(maxVol, c.v || 0); });
     const pP = (mx - mn) * 0.08 || cfg.vol; mn -= pP; mx += pP;
     const pY = (p: number) => aH - ((p - mn) / (mx - mn)) * aH;
     const cW2 = Math.max(1, (aW / vC) * 0.7);
     const gap = aW / vC;
     const iX = (i: number) => i * gap + gap * 0.5;
+    const mas = showMA.current ? calcMA(vis, maPeriod) : null;
+
+    // Dark background
+    ctx.fillStyle = '#07070c';
+    ctx.fillRect(0, 0, aW, aH);
 
     // Grid
     ctx.strokeStyle = 'rgba(40,40,64,.5)'; ctx.lineWidth = 0.5;
@@ -569,6 +453,34 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
       ctx.fillStyle = col; ctx.fillRect(x - cW2 / 2, bt, cW2, Math.max(1, bb - bt));
     });
 
+    // Moving average line
+    if (mas) {
+      ctx.strokeStyle = 'rgba(200,245,66,.6)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+      ctx.beginPath();
+      let started = false;
+      mas.forEach((ma, i) => {
+        if (ma === null) return;
+        const x = iX(i);
+        const y = pY(ma);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    // Volume bars
+    const vScale = vH / maxVol * 0.9;
+    vis.forEach((c: any, i: number) => {
+      const x = iX(i);
+      const gn = c.c >= c.o;
+      const col = gn ? 'rgba(0,232,123,.25)' : 'rgba(255,59,92,.25)';
+      ctx.fillStyle = col;
+      ctx.fillRect(x - cW2 / 2, aH + vH - (c.v || 0) * vScale, cW2, Math.max(1, (c.v || 0) * vScale));
+    });
+    // Volume separator
+    ctx.strokeStyle = 'rgba(40,40,64,.5)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(0, aH); ctx.lineTo(aW, aH); ctx.stroke();
+
     // Price line
     const lY = pY(d.cp);
     const lg = vis.length > 0 && vis[vis.length - 1].c >= vis[vis.length - 1].o;
@@ -581,18 +493,20 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
 
     // Crosshair
     const xh = crosshair.current;
-    if (xh.x !== null && xh.y !== null && xh.x < aW && xh.y < aH) {
+    if (xh.x !== null && xh.y !== null && xh.x < aW) {
       ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(200,245,66,.3)'; ctx.lineWidth = 0.5;
-      ctx.beginPath(); ctx.moveTo(xh.x, 0); ctx.lineTo(xh.x, aH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, xh.y); ctx.lineTo(aW, xh.y); ctx.stroke(); ctx.setLineDash([]);
-      const hp = mn + (1 - xh.y / aH) * (mx - mn);
-      ctx.fillStyle = '#c8f542'; ctx.beginPath(); ctx.roundRect(aW, xh.y - 9, paW, 18, 3); ctx.fill();
-      ctx.fillStyle = '#07070c'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-      ctx.fillText(fp(hp, cfg.d), aW + paW / 2, xh.y + 3);
+      ctx.beginPath(); ctx.moveTo(xh.x, 0); ctx.lineTo(xh.x, ch); ctx.stroke();
+      if (xh.y < aH) {
+        ctx.beginPath(); ctx.moveTo(0, xh.y); ctx.lineTo(aW, xh.y); ctx.stroke(); ctx.setLineDash([]);
+        const hp = mn + (1 - xh.y / aH) * (mx - mn);
+        ctx.fillStyle = '#c8f542'; ctx.beginPath(); ctx.roundRect(aW, xh.y - 9, paW, 18, 3); ctx.fill();
+        ctx.fillStyle = '#07070c'; ctx.font = 'bold 9px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+        ctx.fillText(fp(hp, cfg.d), aW + paW / 2, xh.y + 3);
+      }
     }
 
     // Border
-    ctx.strokeStyle = '#282840'; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, aW - 0.5, aH - 0.5);
+    ctx.strokeStyle = '#282840'; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, aW - 0.5, ch - 0.5);
   }, [pairData, activePair, sO]);
 
   // ── Chart resize ─────────────────────────────────────────────
@@ -673,6 +587,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
         body: JSON.stringify({
           competitorId: myId, competitionId: compId,
           pair: activePair, direction: side === 'buy' ? 'long' : 'short', lotSize: size,
+          entryPrice: d.cp,
         }),
       });
       const trData = await tr.json();
@@ -695,10 +610,11 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
 
     // Sync close to DB
     try {
+      const exitPrice = pairData[p.pair]?.cp || p.mark;
       await fetch('/api/trades', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tradeId: p.id, competitorId: myId }),
+        body: JSON.stringify({ tradeId: p.id, competitorId: myId, exitPrice }),
       });
     } catch { /* silent */ }
   };
@@ -715,51 +631,63 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
   return (
     <div className="h-screen flex flex-col overflow-hidden" style={{ background: '#07070c', color: '#ededf4', fontFamily: "'Space Grotesk', sans-serif" }}>
       {/* ── Header ──────────────────────────────────────────── */}
-      <header className="flex items-center px-3 h-12 border-b shrink-0 gap-1.5" style={{ background: '#0d0d14', borderColor: '#282840' }}>
-        <div className="flex items-center gap-1.5 mr-3">
+      <header className="flex items-center gap-1 px-2 h-12 border-b shrink-0 overflow-x-auto" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+        <div className="flex items-center gap-1.5 shrink-0">
           <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: '#c8f542' }}>
             <Zap size={12} style={{ color: '#07070c' }} />
           </div>
-          <span className="text-sm font-bold tracking-tight">ForexRush</span>
+          <span className="text-sm font-bold tracking-tight hidden sm:inline">ForexRush</span>
         </div>
-        <div className="h-6 w-px mx-1" style={{ background: '#282840' }} />
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: '#13131d', border: '1px solid #282840' }}>
-          <span className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>Balance</span>
-          <span className="text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtBal(balance)}</span>
+        <div className="h-5 w-px shrink-0 mx-0.5" style={{ background: '#282840' }} />
+        <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg shrink-0" style={{ background: '#13131d', border: '1px solid #282840' }}>
+          <span className="text-[8px] uppercase tracking-wider hidden sm:inline" style={{ color: '#505068' }}>Bal</span>
+          <span className="text-[10px] sm:text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{fmtBal(balance)}</span>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: '#13131d', border: '1px solid #282840' }}>
-          <span className="text-[9px] uppercase tracking-wider" style={{ color: '#505068' }}>P&L</span>
-          <span className="text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(totalPnl)}</span>
+        <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg shrink-0" style={{ background: '#13131d', border: '1px solid #282840' }}>
+          <span className="text-[8px] uppercase tracking-wider hidden sm:inline" style={{ color: '#505068' }}>P&L</span>
+          <span className="text-[10px] sm:text-xs font-semibold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>{fmt$(totalPnl)}</span>
         </div>
-        <div className="h-6 w-px mx-1" style={{ background: '#282840' }} />
+        <div className="h-5 w-px shrink-0 mx-0.5" style={{ background: '#282840' }} />
         {/* View toggle */}
-        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #282840' }}>
-          <button onClick={() => setViewMode('arena')} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+        <div className="flex rounded-lg overflow-hidden shrink-0" style={{ border: '1px solid #282840' }}>
+          <button onClick={() => setViewMode('arena')} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
             style={{ background: viewMode === 'arena' ? '#c8f542' : 'transparent', color: viewMode === 'arena' ? '#07070c' : '#505068' }}>
-            <BarChart3 size={10} /> Arena
+            <BarChart3 size={10} /> <span className="hidden sm:inline">Arena</span>
           </button>
-          <button onClick={() => setViewMode('lounge')} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
+          <button onClick={() => setViewMode('lounge')} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold border-none cursor-pointer transition-all duration-150"
             style={{ background: viewMode === 'lounge' ? '#c8f542' : 'transparent', color: viewMode === 'lounge' ? '#07070c' : '#505068' }}>
-            <Sofa size={10} /> Lounge
+            <Sofa size={10} /> <span className="hidden sm:inline">Lounge</span>
           </button>
         </div>
-        {marketLive && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg ml-auto" style={{ background: 'rgba(0,232,123,.08)', border: '1px solid rgba(0,232,123,.25)' }}>
-            <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
-            <span className="text-[10px] font-semibold tracking-wider" style={{ color: '#00e87b' }}>MARKET</span>
+        {connectionStatus === 'error' && (
+          <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg shrink-0" style={{ background: 'rgba(255,59,92,.08)', border: '1px solid rgba(255,59,92,.25)' }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#ff3b5c' }} />
+            <span className="text-[10px] font-semibold tracking-wider hidden sm:inline" style={{ color: '#ff3b5c' }}>DISCONNECTED</span>
           </div>
         )}
-        <div className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold cursor-pointer" style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
+        {connectionStatus !== 'error' && isLive && (
+          <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg shrink-0 ml-auto" style={{ background: 'rgba(0,232,123,.08)', border: '1px solid rgba(0,232,123,.25)' }}>
+            <span className="h-1.5 w-1.5 rounded-full animate-pulse-dot" style={{ background: '#00e87b' }} />
+            <span className="text-[10px] font-semibold tracking-wider hidden sm:inline" style={{ color: '#00e87b' }}>MARKET</span>
+          </div>
+        )}
+        {connectionStatus === 'connecting' && !isLive && (
+          <div className="flex items-center gap-1 px-1.5 py-1 rounded-lg shrink-0 ml-auto" style={{ background: 'rgba(200,245,66,.08)', border: '1px solid rgba(200,245,66,.25)' }}>
+            <Loader2 size={10} className="animate-spin" style={{ color: '#c8f542' }} />
+            <span className="text-[10px] font-semibold tracking-wider hidden sm:inline" style={{ color: '#c8f542' }}>CONNECTING</span>
+          </div>
+        )}
+        <div className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold cursor-pointer shrink-0" style={{ background: 'linear-gradient(135deg,#c8f542,#8bc34a)', color: '#07070c' }}>
           {myName.slice(0, 2).toUpperCase()}
         </div>
-        <button onClick={onLogout} className="h-7 px-2.5 rounded-lg text-[10px] font-semibold cursor-pointer border-none ml-1" style={{ background: '#1a1a28', color: '#505068' }} title="Sign out">✕</button>
+        <button onClick={onLogout} className="h-7 px-2 rounded-lg text-[10px] font-semibold cursor-pointer border-none shrink-0" style={{ background: '#1a1a28', color: '#505068' }} title="Sign out">✕</button>
       </header>
 
       {/* ═══ Arena view ═══ */}
       {viewMode === 'arena' && (<>
-      <div className="flex-1 grid overflow-hidden" style={{ gridTemplateColumns: '1fr 320px' }}>
+      <div className="flex-1 lg:grid overflow-y-auto lg:overflow-hidden" style={{ gridTemplateColumns: '1fr 320px' }}>
         {/* Chart section */}
-        <section className="flex flex-col overflow-hidden min-w-0">
+        <section className="flex flex-col min-h-[400px] lg:min-h-0 lg:overflow-hidden">
           {/* Toolbar */}
           <div className="flex items-center gap-1 px-2.5 py-1.5 border-b shrink-0 flex-wrap" style={{ borderColor: '#282840' }}>
             {/* Pair selector */}
@@ -914,7 +842,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
       </div>
 
       {/* ── Bottom panel ────────────────────────────────────── */}
-      <div className="h-52 border-t flex flex-col shrink-0" style={{ borderColor: '#282840', background: '#0d0d14' }}>
+      <div className="h-64 lg:h-52 border-t flex flex-col shrink-0" style={{ borderColor: '#282840', background: '#0d0d14' }}>
         <div className="flex border-b shrink-0" style={{ borderColor: '#282840' }}>
           {(['positions', 'leaderboard', 'history'] as const).map(tab => (
             <button key={tab} onClick={() => setBottomTab(tab)}
@@ -1044,7 +972,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
                 <Crown size={16} style={{ color: '#ffd84d' }} />
                 <h2 className="text-lg font-bold tracking-tight">Top Traders</h2>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[1, 0, 2].map((podIdx) => {
                   const c = leaderboard[podIdx];
                   if (!c) return <div key={podIdx} />;
@@ -1106,7 +1034,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
               </div>
 
               {/* P&L & Balance Row */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,0,0,.25)', border: '1px solid #1e1e30' }}>
                   <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#505068' }}>Unrealized P&L</p>
                   <p className="text-xl font-bold tabular-nums" style={{ fontFamily: "'JetBrains Mono', monospace", color: totalPnl >= 0 ? '#00e87b' : '#ff3b5c' }}>
@@ -1280,7 +1208,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
             </motion.div>
 
             {/* Competition stats footer */}
-            <div className="grid grid-cols-3 gap-3 mt-6 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6 mb-4">
               {[
                 { label: 'Total Traders', value: leaderboard.length, icon: <Shield size={12} /> },
                 { label: 'Prize Pool', value: `$${(leaderboard.length * 10).toLocaleString()}`, icon: <Trophy size={12} /> },
