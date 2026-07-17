@@ -220,25 +220,13 @@ const USERNAMES = [
 
 export async function POST() {
   try {
-    // Skip if data already exists
-    const existingComp = await db.competition.count();
-    if (existingComp > 0) {
-      const comps = await db.competition.findMany({ include: { _count: { select: { competitors: true } } }, orderBy: { createdAt: 'desc' } });
-      const active = comps.find(c => c.status === 'active') || comps[0];
-      return NextResponse.json({ message: 'Already seeded', competitionId: active?.id, skipped: true });
-    }
-
-    // Clear existing data
-    await db.trade.deleteMany();
-    await db.competitor.deleteMany();
-    await db.licenseCode.deleteMany();
-    await db.competition.deleteMany();
-
-    // Seed license codes
+    // Always ensure all license codes exist (upsert)
     const thirtyDays = 30 * 24 * 60 * 60 * 1000;
     for (const lc of LICENSE_CODES) {
-      await db.licenseCode.create({
-        data: {
+      await db.licenseCode.upsert({
+        where: { code: lc.code },
+        update: { status: 'active', expiresAt: new Date(Date.now() + thirtyDays) },
+        create: {
           code: lc.code,
           clientName: lc.client,
           email: lc.email,
@@ -247,6 +235,14 @@ export async function POST() {
           expiresAt: new Date(Date.now() + thirtyDays),
         },
       });
+    }
+
+    // Skip full reseed if competitions already exist
+    const existingComp = await db.competition.count();
+    if (existingComp > 0) {
+      const comps = await db.competition.findMany({ include: { _count: { select: { competitors: true } } }, orderBy: { createdAt: 'desc' } });
+      const active = comps.find(c => c.status === 'active') || comps[0];
+      return NextResponse.json({ message: 'Codes synced', competitionId: active?.id, licenseCodes: LICENSE_CODES.length, skipped: true });
     }
 
     // ── Create Seasons (each 2 weeks) ────────────────────────────
