@@ -34,7 +34,7 @@ model Competition {
   updatedAt       DateTime @updatedAt
 
   competitors Competitor[]
-  trades      Trade[]        @relation(onDelete: Cascade)
+  trades      Trade[]
 }
 
 model Competitor {
@@ -55,7 +55,7 @@ model Competitor {
 
   licenseCode LicenseCode?  @relation(fields: [licenseCodeId], references: [id])
   competition Competition  @relation(fields: [competitionId], references: [id])
-  trades      Trade[]        @relation(onDelete: Cascade)
+  trades      Trade[]
 
   @@unique([competitionId, username])
 }
@@ -76,6 +76,6 @@ model Trade {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  competitor  Competitor  @relation(fields: [competitorId], references: [id])
-  competition Competition @relation(fields: [competitionId], references: [id])
+  competitor  Competitor  @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
 }
