@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Username must be at least 2 characters' }, { status: 400 });
     }
 
-    const result = await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const license = await tx.licenseCode.findUnique({
         where: { code: normalized },
       });
