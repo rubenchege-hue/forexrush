@@ -58,6 +58,18 @@ export default function Home() {
 
   // ── Init ─────────────────────────────────────────────────────
   useEffect(() => {
+    // Fallback comp immediately so the page works without DB
+    setComp({
+      id: 'season-1',
+      title: 'Season 1',
+      prizePool: 0,
+      endDate: new Date(Date.now() + 14 * 86400000).toISOString(),
+      status: 'active',
+      _count: { competitors: 0 },
+    });
+    setPhase('landing');
+
+    // Try to fetch real data (silent fail if DB is down)
     (async () => {
       try {
         await fetch('/api/seed', { method: 'POST' });
@@ -82,27 +94,11 @@ export default function Home() {
                 setMyId(s.myId);
                 setMyName(me.displayName || me.username);
                 setPhase('arena');
-                return;
               }
             } catch { localStorage.removeItem('fx_session'); }
           }
         }
-      } catch (e) { console.error(e); }
-
-      // Fallback for free entry when DB is down
-      setComp({
-        id: 'season-1',
-        title: 'Season 1',
-        description: 'Free entry season',
-        entryFee: 0,
-        prizePool: 0,
-        startDate: new Date().toISOString(),
-        endDate: new Date(Date.now() + 14 * 86400000).toISOString(),
-        status: 'active',
-        maxParticipants: 9999,
-        _count: { competitors: 0 },
-      });
-      setPhase('landing');
+      } catch (e) { console.error('DB not available, using fallback comp', e); }
     })();
   }, []);
 
