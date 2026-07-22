@@ -111,12 +111,21 @@ export default function Home() {
     if (!username.trim() || !comp) return;
     if (!freeEntry && !code.trim()) return;
     setRedeemBusy(true); setLicErr('');
+
+    if (freeEntry) {
+      const localId = `guest_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      setMyId(localId);
+      setMyName(username.trim());
+      try { localStorage.setItem('fx_session', JSON.stringify({ myId: localId })); } catch {}
+      setPhase('arena');
+      setRedeemBusy(false);
+      return;
+    }
+
     try {
-      const body: Record<string, string> = { competitionId: comp.id, username: username.trim() };
-      if (!freeEntry) body.code = code.trim();
       const r = await fetch('/api/license', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ code: code.trim(), competitionId: comp.id, username: username.trim() }),
       });
       const d = await r.json();
       if (d.success) {
