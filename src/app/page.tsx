@@ -73,7 +73,6 @@ export default function Home() {
           setLeaderboard(lb);
           setRecentTrades(tr);
 
-          // Check for existing session
           const saved = localStorage.getItem('fx_session');
           if (saved) {
             try {
@@ -89,6 +88,20 @@ export default function Home() {
           }
         }
       } catch (e) { console.error(e); }
+
+      // Fallback for free entry when DB is down
+      setComp({
+        id: 'season-1',
+        title: 'Season 1',
+        description: 'Free entry season',
+        entryFee: 0,
+        prizePool: 0,
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 14 * 86400000).toISOString(),
+        status: 'active',
+        maxParticipants: 9999,
+        _count: { competitors: 0 },
+      });
       setPhase('landing');
     })();
   }, []);
