@@ -29,6 +29,7 @@ export default function Home() {
   const [licBusy, setLicBusy] = useState(false);
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [verifiedName, setVerifiedName] = useState('');
+  const [freeEntry, setFreeEntry] = useState(true);
 
   // My profile
   const [myName, setMyName] = useState('');
@@ -105,14 +106,17 @@ export default function Home() {
     setLicBusy(false);
   }, [code]);
 
-  // ── Redeem & enter arena ──────────────────────────────────────
+  // ── Enter arena (licensed or free) ────────────────────────────
   const doEnroll = useCallback(async () => {
-    if (!code.trim() || !username.trim() || !comp) return;
+    if (!username.trim() || !comp) return;
+    if (!freeEntry && !code.trim()) return;
     setRedeemBusy(true); setLicErr('');
     try {
+      const body: Record<string, string> = { competitionId: comp.id, username: username.trim() };
+      if (!freeEntry) body.code = code.trim();
       const r = await fetch('/api/license', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim(), competitionId: comp.id, username: username.trim() }),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (d.success) {
@@ -125,7 +129,7 @@ export default function Home() {
       } else setLicErr(d.error || 'Failed');
     } catch { setLicErr('Network error'); }
     setRedeemBusy(false);
-  }, [code, username, comp]);
+  }, [code, username, comp, freeEntry]);
 
   // ═══════════════════════════════════════════════════════════════
   //  LOADING
@@ -175,8 +179,8 @@ export default function Home() {
           <span className="text-base font-bold tracking-tight">ForexRush</span>
           {comp && <Badge className="text-[9px] px-1.5 py-0 border" style={{ borderColor: 'rgba(200,245,66,.3)', color: '#c8f542', background: 'transparent' }}>{comp.title}</Badge>}
         </div>
-        <Button onClick={() => setPhase('landing')} className="text-xs font-semibold h-8 px-4 rounded-lg" style={{ background: '#c8f542', color: '#07070c' }}>
-          <Key size={12} className="mr-1.5" /> Redeem Code
+        <Button onClick={() => setFreeEntry(true)} className="text-xs font-semibold h-8 px-4 rounded-lg" style={{ background: '#c8f542', color: '#07070c' }}>
+          <Zap size={12} className="mr-1.5" /> Free Entry
         </Button>
       </nav>
 
@@ -213,9 +217,43 @@ export default function Home() {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
           <div className="text-center mb-6">
             <h1 className="text-3xl font-extrabold tracking-tight mb-2">Enter the Arena.</h1>
-            <p className="text-sm" style={{ color: '#8585a0' }}>Redeem your exclusive access code to join the forex competition.</p>
+            <p className="text-sm" style={{ color: '#8585a0' }}>{freeEntry ? 'Season 1 is free to enter. Pick a trader name and join.' : 'Redeem your exclusive access code to join the forex competition.'}</p>
           </div>
 
+          {/* Entry mode toggle */}
+          <div className="flex rounded-lg overflow-hidden mb-4" style={{ border: '1px solid #282840' }}>
+            <button onClick={() => { setFreeEntry(true); setLicErr(''); setCode(''); }}
+              className="flex-1 py-2 text-xs font-semibold border-none cursor-pointer transition-all duration-150"
+              style={{ background: freeEntry ? '#c8f542' : 'transparent', color: freeEntry ? '#07070c' : '#505068' }}>
+              Season 1 Free Entry
+            </button>
+            <button onClick={() => { setFreeEntry(false); setLicErr(''); }}
+              className="flex-1 py-2 text-xs font-semibold border-none cursor-pointer transition-all duration-150"
+              style={{ background: !freeEntry ? '#c8f542' : 'transparent', color: !freeEntry ? '#07070c' : '#505068' }}>
+              <Key size={11} className="inline mr-1" />Access Code
+            </button>
+          </div>
+
+          {freeEntry ? (
+            <div className="rounded-xl p-5 border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Zap size={16} style={{ color: '#c8f542' }} />
+                <span className="text-sm font-semibold">Free Entry — Season 1</span>
+              </div>
+              <input placeholder="Choose your trader name" value={username} maxLength={20}
+                onChange={e => setUsername(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && doEnroll()}
+                className="w-full h-11 rounded-lg px-3 text-sm outline-none mb-3"
+                style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4' }} />
+              {licErr && <p className="text-xs mb-3 flex items-center gap-1" style={{ color: '#ff3b5c' }}><XCircle size={12} />{licErr}</p>}
+              <button onClick={doEnroll} disabled={redeemBusy || !username.trim()}
+                className="w-full h-10 rounded-lg text-sm font-bold disabled:opacity-40 transition-all duration-150"
+                style={{ background: '#c8f542', color: '#07070c' }}>
+                {redeemBusy ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Enter Competition'}
+              </button>
+              <p className="text-[10px] text-center mt-3" style={{ color: '#505068' }}>$10,000 virtual balance &middot; Real-time markets &middot; Leaderboard</p>
+            </div>
+          ) : (
           <div className="rounded-xl p-5 border" style={{ background: '#0d0d14', borderColor: '#282840' }}>
             <div className="flex items-center gap-2 mb-4">
               <Key size={16} style={{ color: '#c8f542' }} />
@@ -238,6 +276,7 @@ export default function Home() {
             </button>
             <p className="text-[10px] text-center mt-3" style={{ color: '#505068' }}>200 exclusive codes &middot; Single-use &middot; 30-day validity</p>
           </div>
+          )}
 
           {/* Prize info */}
           {comp && (

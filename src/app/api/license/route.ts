@@ -74,14 +74,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { code, competitionId, username } = body;
 
-    if (!code || !competitionId || !username) {
-      return NextResponse.json({ error: 'Code, competition ID, and username are required' }, { status: 400 });
-    }
-
-    const normalized = code.toUpperCase().trim();
-
-    if (!CODE_REGEX.test(normalized)) {
-      return NextResponse.json({ error: 'Invalid code format. Use format: COMP-XXXX-XXXX' }, { status: 400 });
+    if (!competitionId || !username) {
+      return NextResponse.json({ error: 'Competition ID and username are required' }, { status: 400 });
     }
 
     const trimmedUsername = username.trim();
@@ -90,18 +84,6 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-      const license = await tx.licenseCode.findUnique({
-        where: { code: normalized },
-      });
-
-      if (!license) {
-        throw new Error('INVALID_CODE');
-      }
-
-      if (license.status === 'expired') {
-        throw new Error('CODE_EXPIRED');
-      }
-
       const competition = await tx.competition.findUnique({
         where: { id: competitionId },
         include: { _count: { select: { competitors: true } } },
@@ -123,29 +105,61 @@ export async function POST(request: NextRequest) {
         throw new Error('USERNAME_TAKEN');
       }
 
-      const existingEntry = await tx.competitor.findFirst({
-        where: { licenseCodeId: license.id, competitionId },
-      });
+      if (code) {
+        const normalized = code.toUpperCase().trim();
+        if (!CODE_REGEX.test(normalized)) {
+          throw new Error('INVALID_FORMAT');
+        }
 
-      if (existingEntry) {
-        return { competitor: existingEntry, isReturning: true };
+        const license = await tx.licenseCode.findUnique({
+          where: { code: normalized },
+        });
+
+        if (!license) {
+          throw new Error('INVALID_CODE');
+        }
+
+        if (license.status === 'expired') {
+          throw new Error('CODE_EXPIRED');
+        }
+
+        const existingEntry = await tx.competitor.findFirst({
+          where: { licenseCodeId: license.id, competitionId },
+        });
+
+        if (existingEntry) {
+          return { competitor: existingEntry, isReturning: true };
+        }
+
+        const competitor = await tx.competitor.create({
+          data: {
+            licenseCodeId: license.id,
+            competitionId,
+            username: trimmedUsername,
+            displayName: license.clientName,
+            avatar: `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(trimmedUsername)}`,
+            initialBalance: 10000.0,
+            currentBalance: 10000.0,
+          },
+        });
+
+        await tx.competition.update({
+          where: { id: competitionId },
+          data: { prizePool: (competition._count.competitors + 1) * 10 },
+        });
+
+        return { competitor, isReturning: false };
       }
 
       const competitor = await tx.competitor.create({
         data: {
-          licenseCodeId: license.id,
           competitionId,
           username: trimmedUsername,
-          displayName: license.clientName,
+          displayName: trimmedUsername,
           avatar: `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(trimmedUsername)}`,
           initialBalance: 10000.0,
           currentBalance: 10000.0,
         },
-      });
-
-      await tx.competition.update({
-        where: { id: competitionId },
-        data: { prizePool: (competition._count.competitors + 1) * 10 },
       });
 
       return { competitor, isReturning: false };
@@ -165,6 +179,7 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Redemption failed';
     const statusMap: Record<string, number> = {
       INVALID_CODE: 404,
+      INVALID_FORMAT: 400,
       CODE_EXPIRED: 410,
       COMPETITION_NOT_FOUND: 404,
       COMPETITION_CLOSED: 400,
@@ -173,6 +188,7 @@ export async function POST(request: NextRequest) {
     const status = statusMap[message] || 500;
     const displayMessages: Record<string, string> = {
       INVALID_CODE: 'Invalid access code. Please check and try again.',
+      INVALID_FORMAT: 'Invalid code format. Use format: COMP-XXXX-XXXX',
       CODE_EXPIRED: 'This access code has expired.',
       COMPETITION_NOT_FOUND: 'Competition not found.',
       COMPETITION_CLOSED: 'This competition is not accepting entries.',
