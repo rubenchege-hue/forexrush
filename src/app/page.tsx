@@ -118,7 +118,7 @@ export default function Home() {
       if (d.success) {
         setMyId(d.competitor.id);
         setMyName(d.competitor.displayName || d.competitor.username);
-        localStorage.setItem('fx_session', JSON.stringify({ myId: d.competitor.id }));
+        try { localStorage.setItem('fx_session', JSON.stringify({ myId: d.competitor.id })); } catch {}
         const lb = await fetch(`/api/leaderboard?competitionId=${comp.id}`).then(r2 => r2.json());
         setLeaderboard(lb);
         setPhase('arena');
@@ -353,12 +353,14 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
   const maPeriod = 14;
 
   const { candles, currentPrices, currentChanges, isLive, pairData, connectionStatus } = usePrices();
+  const pairDataRef = useRef(pairData);
+  pairDataRef.current = pairData;
 
   // ── Update positions P&L ─────────────────────────────────────
   useEffect(() => {
     const iv = setInterval(() => {
       positionsRef.current = positionsRef.current.map(p => {
-        const d = pairData[p.pair];
+        const d = pairDataRef.current[p.pair];
         if (!d) return p;
         const cfg = PAIRS[p.pair];
         if (!cfg) return p;
@@ -373,7 +375,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
       setPositions([...positionsRef.current]);
     }, 500);
     return () => clearInterval(iv);
-  }, [pairData]);
+  }, []);
 
   // ── Moving average calculation ────────────────────────────────
   const calcMA = (data: any[], period: number) => {
@@ -519,7 +521,6 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
 
   // Re-draw on data/pair change
   useEffect(() => { setSO(pairData[activePair]?.cn.length - vc || 0); }, [activePair]);
-  useEffect(() => { draw(); }, [draw]);
 
   // ── Chart mouse events ───────────────────────────────────────
   const onCanvasMove = (e: React.MouseEvent) => {
@@ -562,7 +563,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
     if (!d) return;
     const cfg = PAIRS[activePair];
     const margin = (size * cfg.ls * d.cp) / leverage;
-    if (margin > balanceRef.current) { toast('Insufficient margin', 'e'); return; }
+    if (margin > balance) { toast('Insufficient margin', 'e'); return; }
 
     // Create position locally
     const pos = {
@@ -592,7 +593,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
       });
       const trData = await tr.json();
       if (trData.id) pos.id = trData.id;
-    } catch { /* silent */ }
+    } catch (e) { console.error('API error:', e); }
 
     toast(`${side === 'buy' ? 'Bought' : 'Sold'} ${size} ${activePair} @ ${fp(d.cp, cfg.d)}`, 's');
   };
@@ -610,13 +611,13 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
 
     // Sync close to DB
     try {
-      const exitPrice = pairData[p.pair]?.cp || p.mark;
+      const exitPrice = pairDataRef.current[p.pair]?.cp || p.mark;
       await fetch('/api/trades', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tradeId: p.id, competitorId: myId, exitPrice }),
       });
-    } catch { /* silent */ }
+    } catch (e) { console.error('API error:', e); }
   };
 
   const cfg = PAIRS[activePair];
@@ -763,7 +764,7 @@ function TradingArena({ leaderboard, myName, myId, compId, onLogout }: { leaderb
                 style={{ background: '#1a1a28', border: '1.5px solid #282840', color: '#ededf4', fontFamily: "'JetBrains Mono', monospace" }} />
               <div className="grid grid-cols-4 gap-0.5 mt-1.5">
                 {[25, 50, 75, 100].map(pct => (
-                  <button key={pct} onClick={() => setLotSize('1.00')} className="py-1 rounded text-[10px] font-semibold transition-all duration-150 border-none cursor-pointer"
+                  <button key={pct} onClick={() => setLotSize((pct / 100 * 10).toFixed(2))} className="py-1 rounded text-[10px] font-semibold transition-all duration-150 border-none cursor-pointer"
                     style={{ background: '#1a1a28', border: '1px solid #282840', color: '#8585a0' }}>
                     {pct}%
                   </button>

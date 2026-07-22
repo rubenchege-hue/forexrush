@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
 const FOREX_PAIRS = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD', 'NZD/USD', 'EUR/GBP', 'EUR/JPY', 'GBP/JPY', 'USD/CHF'];
@@ -218,8 +218,12 @@ const USERNAMES = [
   'VolatilityVixen', 'RangeTrader', 'NewsTrader_Jay', 'CarryTrade_Chris', 'AlgoTrader_X',
 ];
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    if (process.env.NODE_ENV !== 'development' && process.env.SEED_SECRET !== request.headers.get('x-seed-secret')) {
+      return NextResponse.json({ error: 'Not allowed' }, { status: 403 });
+    }
+
     // Always ensure all license codes exist (upsert)
     const thirtyDays = 30 * 24 * 60 * 60 * 1000;
     for (const lc of LICENSE_CODES) {
@@ -336,6 +340,19 @@ export async function POST() {
           },
         });
       }
+    }
+
+    // Recalculate demo competitor stats from actual trades
+    for (const comp of competitors) {
+      const trades = await db.trade.findMany({ where: { competitorId: comp.id, status: 'closed' } });
+      const totalPnl = trades.reduce((sum, t) => sum + t.pnl, 0);
+      const totalTrades = trades.length;
+      const wins = trades.filter(t => t.pnl > 0).length;
+      const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+      await db.competitor.update({
+        where: { id: comp.id },
+        data: { totalPnl, totalTrades, winRate, currentBalance: 10000 + totalPnl },
+      });
     }
 
     // Update prize pool

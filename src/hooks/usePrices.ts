@@ -105,10 +105,13 @@ export function usePrices(): UsePricesReturn {
             if (!prev[mapped]) return prev;
             const cn = [...prev[mapped].cn];
             const last = cn[cn.length - 1];
-            last.c = price;
-            last.h = Math.max(last.h, price);
-            last.l = Math.min(last.l, price);
-            last.v = (last.v || 0) + 10;
+            cn[cn.length - 1] = {
+              ...last,
+              c: price,
+              h: Math.max(last.h, price),
+              l: Math.min(last.l, price),
+              v: (last.v || 0) + 10,
+            };
             return {
               ...prev,
               [mapped]: { ...prev[mapped], cn, cp: price, ch: ((price - cn[0].o) / cn[0].o) * 100 },

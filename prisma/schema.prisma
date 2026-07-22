@@ -15,8 +15,7 @@ model LicenseCode {
   status      String   @default("active") // active, redeemed, expired
   issuedAt    DateTime @default(now())
   expiresAt   DateTime
-  redeemedAt  DateTime?
-  redeemedBy  String?  // competitor username
+  updatedAt   DateTime @updatedAt
 
   competitors Competitor[]
 }
@@ -35,7 +34,7 @@ model Competition {
   updatedAt       DateTime @updatedAt
 
   competitors Competitor[]
-  trades      Trade[]
+  trades      Trade[]        @relation(onDelete: Cascade)
 }
 
 model Competitor {
@@ -50,14 +49,13 @@ model Competitor {
   totalPnl      Float    @default(0.0)
   totalTrades   Int      @default(0)
   winRate       Float    @default(0.0)
-  rank          Int?
   enrolledAt    DateTime @default(now())
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   licenseCode LicenseCode?  @relation(fields: [licenseCodeId], references: [id])
   competition Competition  @relation(fields: [competitionId], references: [id])
-  trades      Trade[]
+  trades      Trade[]        @relation(onDelete: Cascade)
 
   @@unique([competitionId, username])
 }
